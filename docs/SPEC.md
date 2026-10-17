@@ -30,7 +30,11 @@ model analyses and the user's corrections.
 7. **It runs on the free tier.** It stays within Cloudflare's free limits for one user.
    The API path is the only thing that can cost money. It is off until a key is
    configured, and every run shows its cost estimate before it is sent.
-8. **There is a single user.** There are no accounts or sharing features.
+8. **Built for one user, ready for more.** Today only allowlisted emails can sign in.
+   Every row and every stored photo belongs to a user, and every query is scoped to the
+   signed-in user, so opening it up later is a config change, not a migration (see D9).
+   There are no sharing features. The operator can see all stored data. That is stated
+   to users, not engineered around.
 
 ## 2. Architecture
 
@@ -78,15 +82,24 @@ for example to compare models. This adds analyses and never replaces them.
 
 > **Tier:** Contract · **Verified:** 2026-10-17 · **Expires:** 2027-04-17
 >
-> Once `migrations/` exists, the migrations are authoritative. Reduce this section to the
-> reasoning behind them.
+> Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
+> of this section to the reasoning behind it. Implemented so far: `users` (0001).
+
+**Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
+users(id)`, and every query filters on the signed-in user's id. That includes child
+tables like `photos`, even though their parent `meal_id` already implies the owner.
+Putting `user_id` directly on every table makes a forgotten join show up as an empty
+result, not as someone else's data.
 
 All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC offset, and
 `tz` holds the IANA zone name, so the local meal time stays correct when traveling.
 
 ```sql
+-- users: see migrations/0001_users.sql (id, email, created_at, last_login_at)
+
 CREATE TABLE meals (
   id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id),
   taken_at    TEXT NOT NULL,       -- first photo's EXIF time, else capture time
   tz          TEXT NOT NULL,       -- e.g. 'America/Chicago'
   meal_type   TEXT,                -- breakfast|lunch|dinner|snack|null
@@ -97,6 +110,7 @@ CREATE TABLE meals (
 
 CREATE TABLE photos (
   id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL REFERENCES users(id),
   meal_id          TEXT NOT NULL REFERENCES meals(id),
   position         INTEGER NOT NULL,  -- order within the meal
   original_key     TEXT NOT NULL,     -- R2 key; kept after roll-off for reference
@@ -113,6 +127,7 @@ CREATE TABLE photos (
 
 CREATE TABLE batches (
   id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id),
   created_at      TEXT NOT NULL,
   prompt_version  TEXT NOT NULL,     -- e.g. 'prompt/1'
   prompt_text     TEXT NOT NULL,     -- exactly what was sent
@@ -127,6 +142,7 @@ CREATE TABLE batches (
 
 CREATE TABLE analyses (
   id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id),
   meal_id         TEXT NOT NULL REFERENCES meals(id),
   batch_id        TEXT NOT NULL REFERENCES batches(id),
   model           TEXT NOT NULL,
@@ -138,6 +154,7 @@ CREATE TABLE analyses (
 
 CREATE TABLE corrections (
   id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id),
   meal_id      TEXT NOT NULL REFERENCES meals(id),
   analysis_id  TEXT REFERENCES analyses(id),  -- null if not tied to one analysis
   payload      TEXT NOT NULL,      -- JSON, same shape as a reply meal object
@@ -154,11 +171,12 @@ is derived, not stored.
 > **Tier:** Contract · **Verified:** 2026-10-17 · **Expires:** 2027-04-17
 
 ```
-originals/YYYY/MM/<photo_id>.<ext>   # bytes exactly as captured, EXIF intact
-display/YYYY/MM/<photo_id>.jpg       # long edge 1600 px, JPEG q≈0.8, EXIF stripped
+users/<user_id>/originals/YYYY/MM/<photo_id>.<ext>   # bytes exactly as captured, EXIF intact
+users/<user_id>/display/YYYY/MM/<photo_id>.jpg       # long edge 1600 px, JPEG q≈0.8, EXIF stripped
 ```
 
-The year and month come from `taken_at`, so roll-off can select by prefix. Original bytes are
+Everything a user owns sits under their prefix, so one user's photos can be exported or
+deleted as a unit. The year and month come from `taken_at`, so roll-off can select by prefix. Original bytes are
 never re-encoded. The display copy is what gets exported to the chatbot. Vision models
 downscale large images to roughly this size anyway, and it keeps uploads small.
 
@@ -264,7 +282,8 @@ The import is all-or-nothing. If any check fails, nothing is stored.
 The roll-off is a script that runs on the laptop: `scripts/rolloff --older-than 12m --dest /path/to/archive`.
 
 1. `GET /api/admin/rolloff-candidates?before=<date>` returns the photo IDs, R2 keys and
-   SHA-256s where `original_status = 'r2'`.
+   SHA-256s where `original_status = 'r2'`, across all users. It is the operator's tool, not
+   a user feature, and it is authenticated with an `ADMIN_TOKEN` secret, not a user session.
 2. `rclone copy` copies those keys from R2 (through the S3-compatible API) to `<dest>/originals/…`,
    keeping the same layout.
 3. Re-hash every local file and compare it with D1. **Stop on any mismatch.**
@@ -283,14 +302,11 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
   installable manifest.
 - **Backend:** a single Cloudflare Worker that serves the static assets and the `/api/*`
   routes (Hono), with D1 and R2 bindings. It is deployed with Wrangler.
-- **Auth (on trial, see D7):** the same code runs as two Workers that share the D1 database and R2 bucket.
-  `bitebook` sits behind Cloudflare Access (free Zero Trust plan; email one-time PIN
-  or Google as the login method), and the Worker re-verifies the
-  `Cf-Access-Jwt-Assertion` header. `bitebook-google` runs Google sign-in itself
-  (OpenID Connect, code + PKCE) and issues its own 90-day session cookie, for emails in
-  `ALLOWED_EMAILS` only. Both refuse every API request until they are configured. The
-  admin API for the roll-off script will use whichever mode wins (an Access service
-  token, or a bearer token in Google mode).
+- **Auth (D8):** the Worker runs Google sign-in itself (OpenID Connect, code + PKCE),
+  asking only for `openid email`. On first sign-in it creates a `users` row, then it issues
+  its own 90-day session cookie (signed with `SESSION_SECRET`) that carries the user id.
+  Google tokens are not kept. Only emails in `ALLOWED_EMAILS` can sign in, and removing
+  one revokes that user's sessions. Until it is configured, the API refuses every request.
 - **Free-tier fit:** a few uploads a day is far below the R2 operation and Worker request limits.
   Storage is the only thing that grows, and roll-off controls it.
 
@@ -328,9 +344,8 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 > **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
 
-1. A Worker with D1 and R2 that serves a "hello" PWA behind Access, deployed. *Deployed at
-   bitebook.mishabhi.workers.dev (Access) and bitebook-google.mishabhi.workers.dev
-   (Google sign-in); each is waiting on its one-time setup in the README.*
+1. A Worker with D1 and R2 that serves a "hello" PWA behind Google sign-in, deployed.
+   *Deployed at bitebook.mishabhi.workers.dev; waiting on the Google OAuth client (README).*
 2. Capture → queue → upload, verified on the iPhone (HEIC, offline, eviction).
 3. Timeline and meal detail.
 4. Export: batch creation, the prompt, and the share/copy handoff.
@@ -349,9 +364,8 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
   "copy prompt" as a separate button in case the share target drops the text. Fallbacks
   are a downloadable zip, or a contact-sheet image with the keys drawn on it. We need to
   test which one the Claude app accepts, and how many images fit in one message.
-- **Which sign-in mode wins (D7).** Try both as home-screen apps on the iPhone. Check
-  whether login works inside the standalone app (both send you to an outside page and
-  back), how often it asks you to log in again, and how much setup each one needed. Then
-  keep one, delete the other Worker, and remove its code and config.
+- **Google sign-in in a home-screen PWA.** Sign-in leaves the app for Google and comes
+  back. We need to check that this works inside the standalone app on iOS, and that the
+  session cookie survives closing and reopening it.
 - **Meal grouping.** Should photos taken within N minutes of each other merge into one
   meal automatically, or is it always manual?

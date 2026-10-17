@@ -1,13 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // Two deployments of the same code share one database and bucket while both sign-in
-  // modes are on trial (docs/decisions.md, D7):
-  //   bitebook         Cloudflare Access          npm run deploy
-  //   bitebook-google  Google sign-in by Worker   npm run deploy:google
   "name": "bitebook",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-10-01",
-  // Only the workers.dev URL is protected; no per-version preview URLs.
+  // Only the workers.dev URL is used; no per-version preview URLs.
   "preview_urls": false,
   "assets": {
     "not_found_handling": "single-page-application",
@@ -22,37 +18,11 @@
     }
   ],
   "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "bitebook-photos" }],
+  // Secrets (wrangler secret put): GOOGLE_CLIENT_SECRET, SESSION_SECRET.
+  // Until GOOGLE_CLIENT_ID and both secrets are set, the API refuses every request.
   "vars": {
-    "AUTH_MODE": "access",
-    // Set both once Cloudflare Access is configured (see README). Until then the API refuses every request.
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": "",
     "GOOGLE_CLIENT_ID": "",
-    "ALLOWED_EMAILS": ""
+    "ALLOWED_EMAILS": "mishabhi@gmail.com"
   },
-  "observability": { "enabled": true },
-  "env": {
-    "google": {
-      "name": "bitebook-google",
-      "preview_urls": false,
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "bitebook-db",
-          "database_id": "9beafa48-a3b4-44cf-b03e-55b2dc786833",
-          "migrations_dir": "migrations"
-        }
-      ],
-      "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "bitebook-photos" }],
-      // Secrets (wrangler secret put --env google): GOOGLE_CLIENT_SECRET, SESSION_SECRET.
-      "vars": {
-        "AUTH_MODE": "google",
-        "ACCESS_TEAM_DOMAIN": "",
-        "ACCESS_AUD": "",
-        "GOOGLE_CLIENT_ID": "",
-        "ALLOWED_EMAILS": "mishabhi@gmail.com"
-      },
-      "observability": { "enabled": true }
-    }
-  }
+  "observability": { "enabled": true }
 }

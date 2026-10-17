@@ -55,3 +55,22 @@ database and bucket: `bitebook` behind Cloudflare Access, and `bitebook-google` 
 Google sign-in handled by the Worker. Only an allowlisted email can get in, and both
 refuse every request until they are configured. Once one has been used on the iPhone
 for a while, keep it and remove the other. That outcome will be recorded as a new entry.
+
+## D8 · 2026-10-17 · Google sign-in only (supersedes D7)
+
+The two-deployment trial was more machinery than it was worth. Google sign-in, run by the
+Worker, is the only mode, on the single `bitebook` Worker. Cloudflare Access is built
+for keeping employees in and the public out: it's priced per seat beyond 50 users, and
+people get in by being added to a list. Google sign-in has no seat limit, is the identity
+used across the user's other apps, and leaves "who may use this" to the app. The
+`bitebook-google` Worker and the Access code were removed. Access remains a reasonable
+choice later for operator-only tools.
+
+## D9 · 2026-10-17 · All data is owned by a user from day one
+
+There is one user today, but decisions are made as if there could be more. Every D1 row
+carries `user_id`, and every R2 object lives under `users/<user_id>/`. Adding this
+before the first photo is stored is almost free. Adding it afterward would mean
+migrating every row and moving every object. The operator (whoever owns the Cloudflare
+account) can see all data. Hiding it with end-to-end encryption was rejected, because it
+would break server-side thumbnails and the API path, and a lost key would lose the corpus.

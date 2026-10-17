@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 
 type Health =
-  | { user: string; authMode: string; d1: string; r2: string }
+  | { user: string; d1: string; r2: string }
   | { error: string; login?: string | null };
 
 export function App() {
@@ -38,13 +38,11 @@ export function App() {
         {health && "user" in health && (
           <>
             <ul>
-              <li>Signed in as {health.user} ({health.authMode === "google" ? "Google" : "Cloudflare Access"})</li>
+              <li>Signed in as {health.user}</li>
               <li class={health.d1 === "ok" ? "good" : "bad"}>Database: {health.d1}</li>
               <li class={health.r2 === "ok" ? "good" : "bad"}>Photo storage: {health.r2}</li>
             </ul>
-            {health.authMode === "google" && (
-              <button class="button secondary" onClick={signOut}>Sign out</button>
-            )}
+            <button class="button secondary" onClick={signOut}>Sign out</button>
           </>
         )}
       </section>
