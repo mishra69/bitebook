@@ -7,8 +7,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
+    "deploy:google": "CLOUDFLARE_ENV=google vite build && wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "cf-typegen": "wrangler types src/worker/worker-configuration.d.ts"
+    "cf-typegen": "wrangler types --strict-vars=false src/worker/worker-configuration.d.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.64.0",

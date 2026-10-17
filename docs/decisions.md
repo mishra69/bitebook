@@ -46,3 +46,12 @@ makes it easy to run the same batch on several models for comparison. The constr
 is that the API path reuses the batch, prompt, reply schema and validator unchanged,
 so there is only one contract to maintain. It's opt-in because it is the only part that
 costs money.
+
+## D7 · 2026-10-17 · Try two sign-in modes before picking one
+
+Cloudflare Access was the plan, but Google is the identity used across all the user's
+other apps. Instead of deciding on paper, the same code is deployed twice, sharing one
+database and bucket: `bitebook` behind Cloudflare Access, and `bitebook-google` with
+Google sign-in handled by the Worker. Only an allowlisted email can get in, and both
+refuse every request until they are configured. Once one has been used on the iPhone
+for a while, keep it and remove the other. That outcome will be recorded as a new entry.

@@ -283,10 +283,14 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
   installable manifest.
 - **Backend:** a single Cloudflare Worker that serves the static assets and the `/api/*`
   routes (Hono), with D1 and R2 bindings. It is deployed with Wrangler.
-- **Auth:** Cloudflare Access (free Zero Trust plan) protects the whole hostname, with an
-  email one-time PIN and a long session. The Worker also verifies the
-  `Cf-Access-Jwt-Assertion` header. The admin API uses an Access service token for the
-  laptop script.
+- **Auth (on trial, see D7):** the same code runs as two Workers that share the D1 database and R2 bucket.
+  `bitebook` sits behind Cloudflare Access (free Zero Trust plan; email one-time PIN
+  or Google as the login method), and the Worker re-verifies the
+  `Cf-Access-Jwt-Assertion` header. `bitebook-google` runs Google sign-in itself
+  (OpenID Connect, code + PKCE) and issues its own 90-day session cookie, for emails in
+  `ALLOWED_EMAILS` only. Both refuse every API request until they are configured. The
+  admin API for the roll-off script will use whichever mode wins (an Access service
+  token, or a bearer token in Google mode).
 - **Free-tier fit:** a few uploads a day is far below the R2 operation and Worker request limits.
   Storage is the only thing that grows, and roll-off controls it.
 
@@ -325,7 +329,8 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 > **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
 
 1. A Worker with D1 and R2 that serves a "hello" PWA behind Access, deployed. *Deployed at
-   bitebook.mishabhi.workers.dev; waiting on the Access setup (README).*
+   bitebook.mishabhi.workers.dev (Access) and bitebook-google.mishabhi.workers.dev
+   (Google sign-in); each is waiting on its one-time setup in the README.*
 2. Capture → queue → upload, verified on the iPhone (HEIC, offline, eviction).
 3. Timeline and meal detail.
 4. Export: batch creation, the prompt, and the share/copy handoff.
@@ -344,7 +349,9 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
   "copy prompt" as a separate button in case the share target drops the text. Fallbacks
   are a downloadable zip, or a contact-sheet image with the keys drawn on it. We need to
   test which one the Claude app accepts, and how many images fit in one message.
-- **Cloudflare Access in a home-screen PWA.** We need to check that the Access login
-  works inside the standalone PWA on iOS, and decide how long a session should last.
+- **Which sign-in mode wins (D7).** Try both as home-screen apps on the iPhone. Check
+  whether login works inside the standalone app (both send you to an outside page and
+  back), how often it asks you to log in again, and how much setup each one needed. Then
+  keep one, delete the other Worker, and remove its code and config.
 - **Meal grouping.** Should photos taken within N minutes of each other merge into one
   meal automatically, or is it always manual?
