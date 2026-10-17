@@ -18,8 +18,8 @@
     }
   ],
   "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "bitebook-photos" }],
-  // Secrets (wrangler secret put): GOOGLE_CLIENT_SECRET, SESSION_SECRET.
-  // Until GOOGLE_CLIENT_ID and both secrets are set, the API refuses every request.
+  // Secret (wrangler secret put): SESSION_SECRET. The Google client ID is public and
+  // needs no secret (ID-token flow). Until both are set, the API refuses every request.
   "vars": {
     "GOOGLE_CLIENT_ID": "234363181677-1qh9dpevvkr6mtghofllcs8o3gm4pjbi.apps.googleusercontent.com",
     "ALLOWED_EMAILS": "mishabhi@gmail.com"

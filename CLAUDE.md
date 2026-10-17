@@ -34,3 +34,10 @@ Precedence when they disagree: **Core > code > Contract text > Plan text.**
 - Don't restate in the spec what the code already says clearly.
 - `docs/decisions.md` is append-only. Never edit old entries. Add a new entry that
   supersedes the old one.
+
+## PWA skill
+
+The PWA layer follows the `pwa-cloudflare` skill (github.com/mishra69/pwa-cloudflare-skill),
+see D10. Files copied from it unmodified are listed in `.skill-assets`. Don't edit those
+in place; change them in the skill and re-sync. To check for drift, run the skill's
+`sync-assets.sh` from the repo root.

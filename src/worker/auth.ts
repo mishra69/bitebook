@@ -1,17 +1,16 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import { createRemoteJWKSet, jwtVerify, SignJWT } from "jose";
+import { jwtVerify, SignJWT } from "jose";
 import type { AppEnv } from "./index";
 import { ulid } from "./ids";
+import { GOOGLE, verifyIdToken } from "./lib/oidc.js";
 
-// Google sign-in (OpenID Connect, authorization code + PKCE), handled by the Worker.
-// After sign-in the Worker issues its own long-lived session cookie; Google tokens are
-// not kept. Only emails in ALLOWED_EMAILS may sign in, and each gets a users row whose
-// id owns all of their data.
+// Google sign-in with the ID-token flow (Google Identity Services): the page gets a
+// signed ID token from Google and POSTs it here; we verify it with oidc.js and issue
+// our own long-lived session cookie. No client secret is involved. Users are keyed
+// on Google's `sub`; only emails in ALLOWED_EMAILS may sign in.
 const SESSION_COOKIE = "bb_session";
-const FLOW_COOKIE = "bb_oauth";
 const SESSION_DAYS = 90;
-const googleJwks = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
 
 type Bindings = AppEnv["Bindings"];
 export type User = { id: string; email: string };
@@ -19,8 +18,7 @@ export type User = { id: string; email: string };
 const key = (env: Bindings) => new TextEncoder().encode(env.SESSION_SECRET!);
 const allowed = (env: Bindings, email: string) =>
   env.ALLOWED_EMAILS.split(",").map((e) => e.trim().toLowerCase()).includes(email.toLowerCase());
-const configured = (env: Bindings) =>
-  Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.SESSION_SECRET && env.ALLOWED_EMAILS);
+const configured = (env: Bindings) => Boolean(env.GOOGLE_CLIENT_ID && env.SESSION_SECRET && env.ALLOWED_EMAILS);
 
 export const requireUser: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (c.env.AUTH_DISABLED === "1") {
@@ -41,11 +39,8 @@ export const requireUser: MiddlewareHandler<AppEnv> = async (c, next) => {
       // fall through to 401
     }
   }
-  return c.json({ error: "unauthenticated", login: "/auth/login" }, 401);
+  return c.json({ error: "unauthenticated" }, 401);
 };
-
-const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const random = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
 
 export const auth = new Hono<AppEnv>();
 
@@ -54,86 +49,31 @@ auth.use("*", async (c, next) => {
   return next();
 });
 
-auth.get("/login", async (c) => {
-  const state = random();
-  const nonce = random();
-  const verifier = random();
-  const challenge = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
-  const flow = await new SignJWT({ state, nonce, verifier })
-    .setProtectedHeader({ alg: "HS256" })
-    .setAudience("oauth-flow")
-    .setExpirationTime("10m")
-    .sign(key(c.env));
-  setCookie(c, FLOW_COOKIE, flow, { path: "/auth", httpOnly: true, secure: true, sameSite: "Lax", maxAge: 600 });
+// The client ID is public (it ships to every browser); serving it from here keeps
+// wrangler.jsonc the single place it is configured.
+auth.get("/config", (c) => c.json({ googleClientId: c.env.GOOGLE_CLIENT_ID }));
 
-  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  url.search = new URLSearchParams({
-    client_id: c.env.GOOGLE_CLIENT_ID,
-    redirect_uri: new URL("/auth/callback", c.req.url).toString(),
-    response_type: "code",
-    scope: "openid email",
-    state,
-    nonce,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    prompt: "select_account",
-  }).toString();
-  return c.redirect(url.toString());
-});
-
-auth.get("/callback", async (c) => {
-  const fail = (reason: string) => c.redirect(`/?auth_error=${encodeURIComponent(reason)}`);
-
-  const flowToken = getCookie(c, FLOW_COOKIE);
-  deleteCookie(c, FLOW_COOKIE, { path: "/auth" });
-  if (!flowToken) return fail("expired");
-  let flow: { state: string; nonce: string; verifier: string };
+auth.post("/google", async (c) => {
+  const body = await c.req.json<{ credential?: string }>().catch(() => ({}) as { credential?: string });
+  let claims;
   try {
-    flow = (await jwtVerify(flowToken, key(c.env), { audience: "oauth-flow" })).payload as typeof flow;
+    claims = await verifyIdToken(body.credential ?? "", { ...GOOGLE, audience: c.env.GOOGLE_CLIENT_ID });
   } catch {
-    return fail("expired");
+    return c.json({ error: "sign_in_failed" }, 401);
   }
-  if (c.req.query("error")) return fail(c.req.query("error")!);
-  if (c.req.query("state") !== flow.state) return fail("state");
-
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code: c.req.query("code") ?? "",
-      client_id: c.env.GOOGLE_CLIENT_ID,
-      client_secret: c.env.GOOGLE_CLIENT_SECRET!,
-      redirect_uri: new URL("/auth/callback", c.req.url).toString(),
-      grant_type: "authorization_code",
-      code_verifier: flow.verifier,
-    }),
-  });
-  if (!res.ok) return fail("token_exchange");
-  const { id_token } = (await res.json()) as { id_token?: string };
-  if (!id_token) return fail("token_exchange");
-
-  let email: string;
-  try {
-    const { payload } = await jwtVerify(id_token, googleJwks, {
-      issuer: ["https://accounts.google.com", "accounts.google.com"],
-      audience: c.env.GOOGLE_CLIENT_ID,
-    });
-    if (payload.nonce !== flow.nonce || payload.email_verified !== true || typeof payload.email !== "string") return fail("id_token");
-    email = payload.email.toLowerCase();
-  } catch {
-    return fail("id_token");
-  }
-  if (!allowed(c.env, email)) return fail("not_allowed");
+  if (claims.email_verified !== true || typeof claims.email !== "string") return c.json({ error: "sign_in_failed" }, 401);
+  const email = claims.email.toLowerCase();
+  if (!allowed(c.env, email)) return c.json({ error: "not_allowed" }, 403);
 
   const now = new Date().toISOString();
   const user = await c.env.DB.prepare(
-    `INSERT INTO users (id, email, created_at, last_login_at) VALUES (?1, ?2, ?3, ?3)
-     ON CONFLICT(email) DO UPDATE SET last_login_at = ?3
+    `INSERT INTO users (id, google_sub, email, created_at, last_login_at) VALUES (?1, ?2, ?3, ?4, ?4)
+     ON CONFLICT(google_sub) DO UPDATE SET email = ?3, last_login_at = ?4
      RETURNING id`,
   )
-    .bind(ulid(), email, now)
+    .bind(ulid(), claims.sub, email, now)
     .first<{ id: string }>();
-  if (!user) return fail("user");
+  if (!user) return c.json({ error: "sign_in_failed" }, 500);
 
   const session = await new SignJWT({ email })
     .setProtectedHeader({ alg: "HS256" })
@@ -143,7 +83,7 @@ auth.get("/callback", async (c) => {
     .setExpirationTime(`${SESSION_DAYS}d`)
     .sign(key(c.env));
   setCookie(c, SESSION_COOKIE, session, { path: "/", httpOnly: true, secure: true, sameSite: "Lax", maxAge: SESSION_DAYS * 86400 });
-  return c.redirect("/");
+  return c.json({ ok: true });
 });
 
 auth.post("/logout", (c) => {

@@ -1,0 +1,29 @@
+# From the pwa-cloudflare skill's _headers. Never let the service worker or the
+# shell go stale in the HTTP cache — a cached sw.js pins users to an old build
+# with no way to recover.
+/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /
+
+/index.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+/manifest.json
+  Cache-Control: no-cache
+
+/version.json
+  Cache-Control: no-cache
+
+/js/*
+  Cache-Control: no-cache
+
+# Vite puts a content hash in every bundle filename, so these never change.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Icons are stable; the filename changes when the art does.
+/icons/*
+  Cache-Control: public, max-age=604800

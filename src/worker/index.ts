@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { auth, requireUser, type User } from "./auth";
 
 export type AppEnv = {
-  Bindings: Env & { AUTH_DISABLED?: string; GOOGLE_CLIENT_SECRET?: string; SESSION_SECRET?: string };
+  Bindings: Env & { AUTH_DISABLED?: string; SESSION_SECRET?: string };
   Variables: { user: User };
 };
 

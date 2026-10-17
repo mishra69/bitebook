@@ -74,3 +74,23 @@ before the first photo is stored is almost free. Adding it afterward would mean
 migrating every row and moving every object. The operator (whoever owns the Cloudflare
 account) can see all data. Hiding it with end-to-end encryption was rejected, because it
 would break server-side thumbnails and the API path, and a lost key would lose the corpus.
+
+## D10 · 2026-10-17 · Follow the pwa-cloudflare skill (v1.0.0)
+
+The PWA layer follows the user's `pwa-cloudflare` skill, which records what has actually
+failed on real devices. That changed several things:
+- the iOS status bar style is `default` (it is baked in at install time);
+- icons are padded for apple-touch and maskable;
+- `sw.js` precaches per file and is version-stamped by the build;
+- `_headers` keeps the shell and `sw.js` uncached;
+- the install prompt is shown only after sign-in;
+- deploys wait until the new version is live.
+
+Sign-in moved from the authorization-code flow to Google's ID-token flow, which needs no
+client secret, so the secret was deleted. Users are keyed on Google's `sub` instead of
+email (migration 0002, run while the table was still empty). Files copied unmodified
+are listed in `.skill-assets` and checked for drift with the skill's `sync-assets.sh`.
+
+One finding goes beyond the skill: Vite marks its bundles `crossorigin`, so a
+`Vary: Origin` response header makes the cache lookup miss when offline. `sw.js`
+therefore matches with `ignoreVary`.

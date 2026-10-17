@@ -83,7 +83,7 @@ for example to compare models. This adds analyses and never replaces them.
 > **Tier:** Contract · **Verified:** 2026-10-17 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
-> of this section to the reasoning behind it. Implemented so far: `users` (0001).
+> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002).
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
 users(id)`, and every query filters on the signed-in user's id. That includes child
@@ -95,7 +95,8 @@ All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC off
 `tz` holds the IANA zone name, so the local meal time stays correct when traveling.
 
 ```sql
--- users: see migrations/0001_users.sql (id, email, created_at, last_login_at)
+-- users: see migrations/0002_users_google_sub.sql (id, google_sub, email, ...).
+-- Users are keyed on Google's immutable `sub`; email is refreshed on each sign-in.
 
 CREATE TABLE meals (
   id          TEXT PRIMARY KEY,
@@ -298,14 +299,16 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 > **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
 
-- **Frontend:** TypeScript, Vite, Preact, with a service worker for the app shell and an
-  installable manifest.
+- **Frontend:** TypeScript, Vite, Preact. The PWA parts (service worker, `_headers`,
+  manifest, icons, iOS head tags, install prompt, versioned deploys) follow the
+  `pwa-cloudflare` skill (D10). Files copied unmodified are listed in `.skill-assets`.
 - **Backend:** a single Cloudflare Worker that serves the static assets and the `/api/*`
   routes (Hono), with D1 and R2 bindings. It is deployed with Wrangler.
-- **Auth (D8):** the Worker runs Google sign-in itself (OpenID Connect, code + PKCE),
-  asking only for `openid email`. On first sign-in it creates a `users` row, then it issues
-  its own 90-day session cookie (signed with `SESSION_SECRET`) that carries the user id.
-  Google tokens are not kept. Only emails in `ALLOWED_EMAILS` can sign in, and removing
+- **Auth (D8, D10):** Google sign-in with the ID-token flow (Google Identity Services).
+  The page gets a signed ID token from Google, and the Worker verifies it with the
+  skill's `oidc.js` (signature, `aud`, `iss`, `exp`). No client secret is involved. On
+  first sign-in it creates a `users` row keyed on `sub`, then it issues its own 90-day
+  session cookie (signed with `SESSION_SECRET`) that carries the user id. Only emails in `ALLOWED_EMAILS` can sign in, and removing
   one revokes that user's sessions. Until it is configured, the API refuses every request.
 - **Free-tier fit:** a few uploads a day is far below the R2 operation and Worker request limits.
   Storage is the only thing that grows, and roll-off controls it.
@@ -345,7 +348,8 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 > **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
 
 1. A Worker with D1 and R2 that serves a "hello" PWA behind Google sign-in, deployed.
-   *Deployed at bitebook.mishabhi.workers.dev; waiting on the Google OAuth client (README).*
+   *Deployed at bitebook.mishabhi.workers.dev and passing the skill's checks (offline
+   boot, headers, version stamp). Waiting on a first sign-in from the iPhone.*
 2. Capture → queue → upload, verified on the iPhone (HEIC, offline, eviction).
 3. Timeline and meal detail.
 4. Export: batch creation, the prompt, and the share/copy handoff.
@@ -364,8 +368,9 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
   "copy prompt" as a separate button in case the share target drops the text. Fallbacks
   are a downloadable zip, or a contact-sheet image with the keys drawn on it. We need to
   test which one the Claude app accepts, and how many images fit in one message.
-- **Google sign-in in a home-screen PWA.** Sign-in leaves the app for Google and comes
-  back. We need to check that this works inside the standalone app on iOS, and that the
-  session cookie survives closing and reopening it.
+- **Google sign-in in a home-screen PWA.** The skill flags this as the most likely
+  thing to break: Google's sign-in can bounce out to Safari, which has separate
+  storage. We need to check, inside the installed iOS app, that signing in works and
+  that the session survives a force-quit and relaunch.
 - **Meal grouping.** Should photos taken within N minutes of each other merge into one
   meal automatically, or is it always manual?

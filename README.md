@@ -16,8 +16,11 @@ https://bitebook.mishabhi.workers.dev.
 ```
 src/app/        PWA frontend (Preact)
 src/worker/     Cloudflare Worker: /api/* routes, Google sign-in under /auth/*
+src/sw/sw.js    service worker template (the build stamps the version and file list)
 migrations/     D1 schema migrations
-public/         manifest, service worker, icons
+public/         manifest, _headers, icons, install prompt
+scripts/        icon generator, spec freshness check
+deploy.sh       stamp-deploy-verify (from the pwa-cloudflare skill), set up in deploy.conf
 wrangler.jsonc  Worker config: D1 (bitebook-db), R2 (bitebook-photos)
 ```
 
@@ -38,26 +41,32 @@ npm run migrate   # apply new migrations to the real D1 first
 npm run deploy    # needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 ```
 
+`npm run deploy` picks a version (`YYYYMMDD_HHMM`) and builds with it, which stamps
+`sw.js` and writes `/version.json`. It then deploys and waits until that version is
+actually being served. The app shows its build at the bottom of the screen and notes
+when a newer one is available. After a deploy, the installed app needs **two
+relaunches**: the first installs the new service worker, the second runs it.
+
 Until Google sign-in is configured, every `/api` request returns `503 auth_not_configured`.
 That's deliberate, so the API is never exposed without sign-in.
 
 ## Google sign-in setup (one-time)
 
-1. In [Google Cloud Console](https://console.cloud.google.com/), create or pick a project,
-   then go to **APIs & Services → OAuth consent screen**. Choose **External**, leave it
-   in **Testing**, and add your Gmail address as a **test user**.
-2. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type **Web
-   application**. Add this as an **authorized redirect URI**:
-   `https://bitebook.mishabhi.workers.dev/auth/callback`
-3. Put the **client ID** in `vars.GOOGLE_CLIENT_ID` in `wrangler.jsonc`, and store the
-   **client secret** with `npx wrangler secret put GOOGLE_CLIENT_SECRET`.
-   `SESSION_SECRET` is already set.
-4. `npm run deploy`.
+Sign-in uses Google's ID-token flow, which needs only a **client ID**, with no secret.
 
-Sign-in only asks for `openid email`. The Worker keeps no Google tokens. It creates a
-user record on first sign-in and issues its own 90-day session cookie. Only emails in
-`ALLOWED_EMAILS` (in `wrangler.jsonc`) can sign in. To let someone else in, add their
-email there and, while the consent screen is in Testing, as a test user too.
+1. In [Google Cloud Console](https://console.cloud.google.com/), in the `bitebook` project,
+   go to **APIs & Services → OAuth consent screen**. Choose **External**, leave it in
+   **Testing**, and add your Gmail address as a **test user**.
+2. **Credentials → OAuth client ID**, type **Web application**. Add these **Authorized
+   JavaScript origins**: `https://bitebook.mishabhi.workers.dev`, and for local
+   development, `http://localhost` and `http://localhost:5173`. No redirect URI is needed.
+3. Put the client ID in `vars.GOOGLE_CLIENT_ID` in `wrangler.jsonc`, and deploy.
+   `SESSION_SECRET` is the only secret, and it is already set.
+
+The Worker verifies Google's token, creates a user record (keyed on Google's `sub`) on
+first sign-in, and issues its own 90-day session cookie. Only emails in `ALLOWED_EMAILS`
+(in `wrangler.jsonc`) can sign in. To let someone else in, add their email there and,
+while the consent screen is in Testing, as a test user too.
 
 ## Data ownership
 

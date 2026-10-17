@@ -6,6 +6,10 @@
   --good: #2e7d32;
   --bad: #c62828;
   color-scheme: light dark;
+  /* Install prompt (pwa-install.js) theming crosses its shadow boundary via these. */
+  --pwa-accent: var(--fg);
+  --pwa-surface: var(--card);
+  --pwa-text: var(--fg);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -18,16 +22,26 @@
   }
 }
 * { box-sizing: border-box; }
+html, body {
+  /* From the pwa-cloudflare skill: rubber-band scrolling reads as broken in a standalone app. */
+  overscroll-behavior: none;
+}
+button, .button, [role="button"], input, select, a {
+  touch-action: manipulation;
+}
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
   font: 16px/1.5 system-ui, -apple-system, sans-serif;
 }
-main {
+/* Every full-screen container honours the safe area on all four sides. */
+.screen {
   max-width: 32rem;
   margin: 0 auto;
-  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+  min-height: 100dvh;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+           max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
 }
 h1 { margin: 0.5rem 0 0; }
 h2 { font-size: 1rem; margin: 0 0 0.5rem; }
@@ -48,3 +62,11 @@ ul { margin: 0; padding-left: 1.2rem; }
   text-decoration: none;
 }
 .button.secondary { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1px var(--muted); }
+.version-tag {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}

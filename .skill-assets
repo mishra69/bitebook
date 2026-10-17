@@ -1,0 +1,9 @@
+# Files copied unmodified from the pwa-cloudflare skill (github.com/mishra69/pwa-cloudflare-skill).
+# Check for drift from the repo root: <skill>/skills/pwa-cloudflare/sync-assets.sh
+# Adapted templates (sw.js, _headers, head, pwa.css, version-check, make-icons) are
+# deliberately not listed: differences there are expected.
+oidc.js          src/worker/lib/oidc.js
+pwa-install.js   public/js/pwa-install.js
+deploy.sh        deploy.sh
+
+# skill-version: 1.0.0
