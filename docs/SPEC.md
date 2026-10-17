@@ -19,13 +19,17 @@ model analyses and the user's corrections.
 2. **Photos never touch the camera roll.** They live only in Bitebook's storage.
 3. **Nothing is lost.** A photo is "saved" only once the server has stored it. Until then
    it stays queued on the device and is shown as pending.
-4. **The human is the API.** The app exports batches for a chatbot and imports the replies.
-   It never calls an LLM itself (see D2).
+4. **The human is the API by default.** The app exports batches for a chatbot and imports
+   the replies. An optional API path can run the same batch directly (see D6). Both paths
+   share one batch, prompt and reply contract, and go through the same validator. The
+   API path is a different way to deliver the batch, not a separate feature.
 5. **History is append-only.** Analyses and corrections are never overwritten. Each
    analysis records the model, the prompt version and the date (see D5).
 6. **The corpus stays portable.** Everything can be exported as plain files (JPEG and JSON)
    without Bitebook running.
 7. **It runs on the free tier.** It stays within Cloudflare's free limits for one user.
+   The API path is the only thing that can cost money. It is off until a key is
+   configured, and every run shows its cost estimate before it is sent.
 8. **There is a single user.** There are no accounts or sharing features.
 
 ## 2. Architecture
@@ -37,7 +41,8 @@ iPhone (PWA, home-screen app)
   ├─ IndexedDB: upload queue only (not the source of truth)
   └─ HTTPS ──> Cloudflare Worker (serves static PWA + JSON API)
                  ├─ D1: meals, photos, batches, analyses, corrections
-                 └─ R2: originals/ and display/ images
+                 ├─ R2: originals/ and display/ images
+                 └─ (optional) LLM provider API, for the API path
 Laptop
   └─ roll-off script (rclone + Worker admin API) ──> local disk
 ```
@@ -54,6 +59,8 @@ and queues both copies. The upload sends the original and the display copy. The 
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
 hands the images and the prompt to the chatbot. The batch is stored as "open".
+Alternatively, **Run via API** sends the same batch from the Worker. The reply goes straight
+into Import, with the model filled in automatically.
 
 **Import.** Paste the reply and select which model produced it. The app validates the reply against
 the batch (section 6) and, if it is valid, stores one analysis per meal and marks the batch as
@@ -110,6 +117,7 @@ CREATE TABLE batches (
   prompt_version  TEXT NOT NULL,     -- e.g. 'prompt/1'
   prompt_text     TEXT NOT NULL,     -- exactly what was sent
   key_map         TEXT NOT NULL,     -- JSON: {"A": "<meal_id>", ...}
+  channel         TEXT NOT NULL DEFAULT 'chat',  -- 'chat' | 'api'
   status          TEXT NOT NULL,     -- 'open' | 'imported' | 'abandoned'
   reply_raw       TEXT,              -- exactly what was pasted back
   reply_model     TEXT,              -- user-selected, e.g. 'claude-opus-5-5'
@@ -220,6 +228,8 @@ Reply with ONLY one JSON code block matching this schema, with no other text:
 
 ### Import validation
 
+This applies to both paths. An API reply is treated exactly like a pasted one.
+
 The import is all-or-nothing. If any check fails, nothing is stored.
 
 - The pasted text may be wrapped in a ```` ```json ```` fence or have extra text around it. Extract
@@ -280,6 +290,24 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 - **Free-tier fit:** a few uploads a day is far below the R2 operation and Worker request limits.
   Storage is the only thing that grows, and roll-off controls it.
 
+## 9a. API path
+
+> **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
+
+- `POST /api/batches/:id/run` with `{ model }`. The Worker loads the display copies from R2,
+  sends the stored `prompt_text` and the images in a single request, and passes the
+  response text to the same import validator. It sets `channel = 'api'`, and
+  `reply_model` comes from the provider's response, not from user input.
+- The provider key is stored as a Worker secret, never on the device. Providers sit behind a
+  small adapter (`buildRequest`, `extractText`) so another vendor can be added for model
+  comparisons. Anthropic is the first.
+- Before sending, the app shows an estimated cost (images and prompt tokens) and needs a
+  confirmation tap. There is no automatic or scheduled run.
+- If the request fails or the reply is invalid, the batch stays open and the raw response is kept
+  for debugging. The user can retry or fall back to the chat handoff.
+- Large batches may need splitting to stay within provider request limits. Measure this
+  before designing around it.
+
 ## 10. Screens
 
 > **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
@@ -287,7 +315,8 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 1. **Capture** (the home screen): a big camera button, the queue status, and today's meals.
 2. **Timeline:** meals by day, with thumbnails and a badge for pending, in-batch or analyzed.
 3. **Meal detail:** the photos, note, every analysis (by model and date), and corrections.
-4. **Export:** select meals, then share or copy. The batch is created at this step.
+4. **Export:** select meals, then share or copy, or use "Run via API" when a key is
+   configured. The batch is created at this step.
 5. **Import:** pick the open batch, paste the reply, pick the model, then validate and save.
 6. **Settings:** storage usage, the default model name, and abandoning stale open batches.
 
@@ -302,6 +331,7 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 5. Import: validation and storage.
 6. Corrections.
 7. The roll-off script.
+8. The API path (optional; it reuses everything from steps 4–5).
 
 ## 12. Open questions
 

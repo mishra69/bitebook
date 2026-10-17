@@ -37,3 +37,12 @@ analyses stay in Cloudflare permanently.
 Analyses are never overwritten. Each one records the model that produced it, the prompt
 version, and the date. User corrections are stored separately as ground truth. This
 makes the data usable later as an evaluation corpus for comparing models.
+
+## D6 · 2026-10-17 · Add an optional API path (amends D2)
+
+The chat handoff stays the default, but a batch can also be run directly through an LLM
+API from the Worker. This is a fallback for when the handoff is inconvenient, and it
+makes it easy to run the same batch on several models for comparison. The constraint
+is that the API path reuses the batch, prompt, reply schema and validator unchanged,
+so there is only one contract to maintain. It's opt-in because it is the only part that
+costs money.
