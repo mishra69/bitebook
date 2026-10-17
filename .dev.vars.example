@@ -1,0 +1,2 @@
+# Copy to .dev.vars for local development only. Never set this in production.
+AUTH_DISABLED=1

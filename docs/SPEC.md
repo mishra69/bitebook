@@ -324,7 +324,8 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 > **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
 
-1. A Worker with D1 and R2 that serves a "hello" PWA behind Access, deployed.
+1. A Worker with D1 and R2 that serves a "hello" PWA behind Access, deployed. *Deployed at
+   bitebook.mishabhi.workers.dev; waiting on the Access setup (README).*
 2. Capture → queue → upload, verified on the iPhone (HEIC, offline, eviction).
 3. Timeline and meal detail.
 4. Export: batch creation, the prompt, and the share/copy handoff.

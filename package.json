@@ -1,0 +1,25 @@
+{
+  "name": "bitebook",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "vite build && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types src/worker/worker-configuration.d.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.64.0",
+    "@preact/preset-vite": "^2.10.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "wrangler": "^4.151.1"
+  },
+  "dependencies": {
+    "hono": "^4.13.13",
+    "jose": "^6.2.12",
+    "preact": "^11.0.1"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bitebook",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  // Only the workers.dev URL is protected by Access; no per-version preview URLs.
+  "preview_urls": false,
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bitebook-db",
+      "database_id": "9beafa48-a3b4-44cf-b03e-55b2dc786833",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "bitebook-photos" }],
+  "vars": {
+    // Set both once Cloudflare Access is configured (see README). Until then the API refuses every request.
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": ""
+  },
+  "observability": { "enabled": true }
+}
