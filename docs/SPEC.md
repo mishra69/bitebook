@@ -83,7 +83,7 @@ for example to compare models. This adds analyses and never replaces them.
 > **Tier:** Contract · **Verified:** 2026-10-17 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
-> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002).
+> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003).
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
 users(id)`, and every query filters on the signed-in user's id. That includes child
@@ -98,33 +98,13 @@ All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC off
 -- users: see migrations/0002_users_google_sub.sql (id, google_sub, email, ...).
 -- Users are keyed on Google's immutable `sub`; email is refreshed on each sign-in.
 
-CREATE TABLE meals (
-  id          TEXT PRIMARY KEY,
-  user_id     TEXT NOT NULL REFERENCES users(id),
-  taken_at    TEXT NOT NULL,       -- first photo's EXIF time, else capture time
-  tz          TEXT NOT NULL,       -- e.g. 'America/Chicago'
-  meal_type   TEXT,                -- breakfast|lunch|dinner|snack|null
-  note        TEXT,
-  created_at  TEXT NOT NULL,
-  deleted_at  TEXT                 -- soft delete; corpus rows are never hard-deleted
-);
-
-CREATE TABLE photos (
-  id               TEXT PRIMARY KEY,
-  user_id          TEXT NOT NULL REFERENCES users(id),
-  meal_id          TEXT NOT NULL REFERENCES meals(id),
-  position         INTEGER NOT NULL,  -- order within the meal
-  original_key     TEXT NOT NULL,     -- R2 key; kept after roll-off for reference
-  original_mime    TEXT NOT NULL,
-  original_bytes   INTEGER NOT NULL,
-  original_sha256  TEXT NOT NULL,     -- computed on device, verified by Worker
-  original_status  TEXT NOT NULL DEFAULT 'r2',  -- 'r2' | 'archived_local'
-  archived_at      TEXT,
-  display_key      TEXT NOT NULL,
-  display_bytes    INTEGER NOT NULL,
-  width            INTEGER,
-  height           INTEGER
-);
+-- meals, photos: see migrations/0003_meals_photos.sql. Not obvious from the SQL:
+--  * Meal and photo ids are ULIDs made on the device, so a retried upload is the
+--    same row, never a duplicate.
+--  * taken_ms duplicates taken_at as epoch ms. ISO strings with different offsets
+--    don't sort correctly as text, which matters once you travel.
+--  * A meal row is written only after every file is confirmed in R2 with the
+--    expected size and SHA-256, so a meal never points at a missing photo.
 
 CREATE TABLE batches (
   id              TEXT PRIMARY KEY,
@@ -170,16 +150,18 @@ is derived, not stored.
 ## 5. Storage layout (R2)
 
 > **Tier:** Contract · **Verified:** 2026-10-17 · **Expires:** 2027-04-17
+>
+> Implemented in `photoKey()` in `src/shared/meals.ts`, which is authoritative.
 
-```
-users/<user_id>/originals/YYYY/MM/<photo_id>.<ext>   # bytes exactly as captured, EXIF intact
-users/<user_id>/display/YYYY/MM/<photo_id>.jpg       # long edge 1600 px, JPEG q≈0.8, EXIF stripped
-```
+Layout: `users/<user_id>/originals/YYYY/MM/<photo_id>.<ext>` and
+`users/<user_id>/display/YYYY/MM/<photo_id>.jpg`. Everything a user owns sits under
+their prefix, so one user's photos can be exported or deleted as a unit. The month
+comes from the meal's local `taken_at`, so roll-off can select by prefix.
 
-Everything a user owns sits under their prefix, so one user's photos can be exported or
-deleted as a unit. The year and month come from `taken_at`, so roll-off can select by prefix. Original bytes are
-never re-encoded. The display copy is what gets exported to the chatbot. Vision models
-downscale large images to roughly this size anyway, and it keeps uploads small.
+Originals are stored byte for byte, EXIF included, which makes them the corpus. Display
+copies are 1600 px on the long edge, JPEG at quality 0.8, with EXIF stripped (location
+never reaches a chatbot). They're what gets exported for analysis. Vision models
+downscale to about this size anyway, and the smaller files keep uploads cheap.
 
 ## 6. Prompt and reply contract
 
@@ -261,20 +243,22 @@ The import is all-or-nothing. If any check fails, nothing is stored.
 - Skipped meals are stored as analyses with `skipped: true` but **remain pending**, so
   they show up in the next export.
 
-## 7. Capture and upload details
+## 7. Capture: what still needs an iPhone
 
-> **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2026-12-17
 
-- Use `<input type="file" accept="image/*" capture="environment" multiple>`. iOS may give
-  JPEG or HEIC depending on its settings. Store whatever arrives, and record its MIME type.
-- On the device: read the EXIF `DateTimeOriginal`, compute the SHA-256 of the original,
-  and render the display copy on a canvas. A HEIC original that the canvas can't decode
-  needs a fallback (for example, also accepting the camera's JPEG output). **Test this on a
-  real iPhone first.**
-- Queue the meal and its blobs in IndexedDB. Upload when online and retry with backoff.
-  The Worker re-hashes the original and rejects a mismatch. Only after the server
-  acknowledges the upload is the local copy cleared.
-- iOS can evict PWA storage, which is why the queue is only temporary and R2 is the source of truth.
+Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). It was
+tested in Chromium: EXIF time, drafts surviving a reload, offline save, the queue
+draining on reconnect, and originals byte-identical in R2. These are only knowable on the
+phone. Delete this section once they're checked:
+
+- **HEIC:** which format the camera hands the app, and whether the display copy renders
+  (the app falls back from `createImageBitmap` to `<img>`).
+- **Reload behind the camera:** if iOS reloads the app while the camera is open, the
+  draft should come back.
+- **Offline:** capture in airplane mode, then reconnect. The meal should upload by
+  itself.
+- **Memory:** several 12 MP photos in one meal should not crash the app.
 
 ## 8. Roll-off of originals
 
@@ -347,10 +331,8 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 > **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
 
-1. A Worker with D1 and R2 that serves a "hello" PWA behind Google sign-in, deployed.
-   *Deployed at bitebook.mishabhi.workers.dev and passing the skill's checks (offline
-   boot, headers, version stamp). Waiting on a first sign-in from the iPhone.*
-2. Capture → queue → upload, verified on the iPhone (HEIC, offline, eviction).
+2. Capture → queue → upload, verified on the iPhone. *Built and deployed. The on-device
+   checks are in §7.*
 3. Timeline and meal detail.
 4. Export: batch creation, the prompt, and the share/copy handoff.
 5. Import: validation and storage.
@@ -368,9 +350,5 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
   "copy prompt" as a separate button in case the share target drops the text. Fallbacks
   are a downloadable zip, or a contact-sheet image with the keys drawn on it. We need to
   test which one the Claude app accepts, and how many images fit in one message.
-- **Google sign-in in a home-screen PWA.** The skill flags this as the most likely
-  thing to break: Google's sign-in can bounce out to Safari, which has separate
-  storage. We need to check, inside the installed iOS app, that signing in works and
-  that the session survives a force-quit and relaunch.
 - **Meal grouping.** Should photos taken within N minutes of each other merge into one
   meal automatically, or is it always manual?

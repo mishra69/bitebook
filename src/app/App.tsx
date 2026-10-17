@@ -1,105 +1,103 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
+import { Capture } from "./Capture";
+import { MealList } from "./MealList";
+import { GoogleSignIn } from "./SignIn";
+import { startSync } from "./lib/outbox";
 import { liveVersion, versionLabel } from "./version";
 
-type Health = { user: string; d1: string; r2: string } | { error: string };
+type Health = { user: string; userId: string; d1: string; r2: string } | { error: string };
+
+// The signed-in user is remembered on the device so the app (and its outbox) still
+// works when it's opened offline.
+const USER_KEY = "bitebook.user";
+type User = { id: string; email: string };
+const rememberedUser = (): User | null => {
+  try {
+    return JSON.parse(localStorage.getItem(USER_KEY) ?? "null");
+  } catch {
+    return null;
+  }
+};
 
 export function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [signInError, setSignInError] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(rememberedUser);
+  const [authState, setAuthState] = useState<"checking" | "ok" | "signed_out" | "offline" | "error">("checking");
   const [live, setLive] = useState<string>();
 
-  const loadHealth = () =>
-    fetch("/api/health")
-      .then((r) => r.json() as Promise<Health>)
-      .then(setHealth)
-      .catch(() => setHealth({ error: "offline" }));
+  const checkSession = async () => {
+    let h: Health;
+    try {
+      h = (await fetch("/api/health").then((r) => r.json())) as Health;
+    } catch {
+      h = { error: "offline" };
+    }
+    if ("userId" in h) {
+      const u = { id: h.userId, email: h.user };
+      try {
+        localStorage.setItem(USER_KEY, JSON.stringify(u));
+      } catch {
+        /* storage blocked: we just won't work offline */
+      }
+      setUser(u);
+      setAuthState("ok");
+    } else if (h.error === "unauthenticated") {
+      setUser(null);
+      setAuthState("signed_out");
+    } else {
+      setAuthState(h.error === "offline" ? "offline" : "error");
+    }
+  };
 
   useEffect(() => {
-    loadHealth();
+    checkSession();
     const check = () => liveVersion().then(setLive);
     check();
     // A new service worker taking over means a new build just landed.
     navigator.serviceWorker?.addEventListener("controllerchange", check);
   }, []);
 
-  const signedIn = health !== null && "user" in health;
+  useEffect(() => {
+    if (user) startSync(user.id);
+  }, [user?.id]);
 
   // The install prompt must not cover the sign-in button, so only offer it once signed in.
   useEffect(() => {
-    if (signedIn && typeof PWAInstall !== "undefined") PWAInstall.show(false);
-  }, [signedIn]);
+    if (authState === "ok" && typeof PWAInstall !== "undefined") PWAInstall.show(false);
+  }, [authState]);
 
   const signOut = async () => {
-    await fetch("/auth/logout", { method: "POST" });
+    await fetch("/auth/logout", { method: "POST" }).catch(() => {});
     if (typeof google !== "undefined") google.accounts.id.disableAutoSelect();
-    loadHealth();
+    try {
+      localStorage.removeItem(USER_KEY);
+    } catch {
+      /* ignore */
+    }
+    setUser(null);
+    setAuthState("signed_out");
   };
 
   return (
     <main class="screen">
-      <h1>Bitebook</h1>
-      <p class="muted">Meal log. Capture is coming in step 2.</p>
-      <section class="card">
-        <h2>Status</h2>
-        {!health && <p>Checking…</p>}
-        {health && "error" in health && health.error === "unauthenticated" && (
-          <GoogleSignIn onSignedIn={loadHealth} onError={setSignInError} />
+      <header class="app-header">
+        <h1>Bitebook</h1>
+        {user && (
+          <button class="link" onClick={signOut} title={user.email}>
+            Sign out
+          </button>
         )}
-        {signInError && <p class="bad">Sign-in failed: {signInError}</p>}
-        {health && "error" in health && health.error !== "unauthenticated" && <p class="bad">API: {health.error}</p>}
-        {health && "user" in health && (
-          <>
-            <ul>
-              <li>Signed in as {health.user}</li>
-              <li class={health.d1 === "ok" ? "good" : "bad"}>Database: {health.d1}</li>
-              <li class={health.r2 === "ok" ? "good" : "bad"}>Photo storage: {health.r2}</li>
-            </ul>
-            <button class="button secondary" onClick={signOut}>Sign out</button>
-          </>
-        )}
-      </section>
+      </header>
+      {authState === "checking" && !user && <p class="muted">Loading…</p>}
+      {authState === "error" && <p class="bad">The server isn't responding properly. Try again in a bit.</p>}
+      {!user && authState === "signed_out" && <GoogleSignIn onSignedIn={checkSession} />}
+      {!user && authState === "offline" && <p class="muted">You're offline. Sign in once you're back online.</p>}
+      {user && (
+        <>
+          <Capture userId={user.id} />
+          <MealList userId={user.id} />
+        </>
+      )}
       <p class="version-tag" data-version>{versionLabel(live)}</p>
     </main>
-  );
-}
-
-function GoogleSignIn({ onSignedIn, onError }: { onSignedIn: () => void; onError: (e: string | null) => void }) {
-  const button = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState("Loading Google sign-in…");
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { googleClientId } = (await fetch("/auth/config").then((r) => r.json())) as { googleClientId: string };
-      // The GIS script loads async from accounts.google.com; wait for it.
-      for (let i = 0; typeof google === "undefined" && i < 100; i++) await new Promise((r) => setTimeout(r, 100));
-      if (cancelled) return;
-      if (typeof google === "undefined") return setStatus("Couldn't load Google sign-in. Are you online?");
-      google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: async ({ credential }) => {
-          onError(null);
-          const res = await fetch("/auth/google", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ credential }),
-          });
-          if (res.ok) onSignedIn();
-          else onError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? String(res.status));
-        },
-      });
-      google.accounts.id.renderButton(button.current!, { theme: "outline", size: "large", text: "signin_with" });
-      setStatus("");
-    })().catch(() => setStatus("Couldn't load Google sign-in. Are you online?"));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <>
-      {status && <p>{status}</p>}
-      <div ref={button} />
-    </>
   );
 }

@@ -2,7 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { jwtVerify, SignJWT } from "jose";
 import type { AppEnv } from "./index";
-import { ulid } from "./ids";
+import { ulid } from "../shared/ulid";
 import { GOOGLE, verifyIdToken } from "./lib/oidc.js";
 
 // Google sign-in with the ID-token flow (Google Identity Services): the page gets a
@@ -22,6 +22,11 @@ const configured = (env: Bindings) => Boolean(env.GOOGLE_CLIENT_ID && env.SESSIO
 
 export const requireUser: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (c.env.AUTH_DISABLED === "1") {
+    // Local development only: a stand-in user, with a real row so foreign keys hold.
+    await c.env.DB.prepare(
+      `INSERT OR IGNORE INTO users (id, google_sub, email, created_at, last_login_at)
+       VALUES ('dev-user', 'dev-user', 'dev@localhost', datetime('now'), datetime('now'))`,
+    ).run();
     c.set("user", { id: "dev-user", email: "dev@localhost" });
     return next();
   }

@@ -8,3 +8,5 @@ export function ulid(now = Date.now()): string {
   for (const b of crypto.getRandomValues(new Uint8Array(16))) rand += ALPHABET[b % 32];
   return time + rand;
 }
+
+export const isUlid = (s: unknown): s is string => typeof s === "string" && /^[0-9A-HJKMNP-TV-Z]{26}$/.test(s);

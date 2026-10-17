@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { auth, requireUser, type User } from "./auth";
+import { meals } from "./meals";
 
 export type AppEnv = {
   Bindings: Env & { AUTH_DISABLED?: string; SESSION_SECRET?: string };
@@ -18,10 +19,13 @@ api.get("/health", async (c) => {
   ]);
   return c.json({
     user: c.get("user").email,
+    userId: c.get("user").id,
     d1: db.status === "fulfilled" && db.value?.ok === 1 ? "ok" : "error",
     r2: photos.status === "fulfilled" ? "ok" : "error",
   });
 });
+
+api.route("/", meals);
 
 const app = new Hono<AppEnv>();
 app.route("/api", api);

@@ -14,8 +14,9 @@ https://bitebook.mishabhi.workers.dev.
 ## Layout
 
 ```
-src/app/        PWA frontend (Preact)
-src/worker/     Cloudflare Worker: /api/* routes, Google sign-in under /auth/*
+src/app/        PWA frontend (Preact); lib/ has image processing, EXIF, the upload outbox
+src/worker/     Cloudflare Worker: /api/* routes (meals.ts), Google sign-in under /auth/*
+src/shared/     types and helpers used by both (ULIDs, meal shapes, R2 key layout)
 src/sw/sw.js    service worker template (the build stamps the version and file list)
 migrations/     D1 schema migrations
 public/         manifest, _headers, icons, install prompt
