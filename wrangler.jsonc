@@ -21,7 +21,7 @@
   // Secrets (wrangler secret put): GOOGLE_CLIENT_SECRET, SESSION_SECRET.
   // Until GOOGLE_CLIENT_ID and both secrets are set, the API refuses every request.
   "vars": {
-    "GOOGLE_CLIENT_ID": "",
+    "GOOGLE_CLIENT_ID": "234363181677-1qh9dpevvkr6mtghofllcs8o3gm4pjbi.apps.googleusercontent.com",
     "ALLOWED_EMAILS": "mishabhi@gmail.com"
   },
   "observability": { "enabled": true }
