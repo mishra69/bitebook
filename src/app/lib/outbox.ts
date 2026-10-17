@@ -68,8 +68,14 @@ export const getDraft = async (userId: string) => (await all(userId)).find((m) =
 
 // ── Sync ────────────────────────────────────────────────────────────────────
 
-export type SyncState = { syncing: boolean; offline: boolean; signedOut: boolean; lastError: string | null };
-let state: SyncState = { syncing: false, offline: false, signedOut: false, lastError: null };
+export type SyncState = {
+  syncing: boolean;
+  offline: boolean;
+  signedOut: boolean;
+  lastError: string | null;
+  progress: { sent: number; total: number } | null; // bytes, for the meal being uploaded
+};
+let state: SyncState = { syncing: false, offline: false, signedOut: false, lastError: null, progress: null };
 const listeners = new Set<() => void>();
 export const getSyncState = () => state;
 export function subscribe(fn: () => void) {
@@ -95,12 +101,23 @@ export function startSync(userId: string) {
   currentUser = userId;
   if (!startSync.wired) {
     startSync.wired = true;
-    window.addEventListener("online", () => sync());
-    document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && sync());
+    window.addEventListener("online", () => restartSync());
+    // iOS freezes a backgrounded web app, often mid-upload. A request frozen that way may
+    // never settle, so on return abandon it and start over: every step is idempotent.
+    document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && restartSync());
+    window.addEventListener("pageshow", () => restartSync());
   }
   return sync();
 }
 startSync.wired = false;
+
+let inflight: AbortController | null = null;
+
+function restartSync() {
+  inflight?.abort();
+  retryIndex = 0;
+  return sync();
+}
 
 export function sync(): Promise<void> {
   if (!currentUser) return Promise.resolve();
@@ -131,7 +148,7 @@ export function sync(): Promise<void> {
       }
     } finally {
       running = null;
-      changed({ syncing: false });
+      changed({ syncing: false, progress: null });
     }
   })();
   return running;
@@ -144,8 +161,12 @@ export async function retryMeal(meal: OutboxMeal) {
 }
 
 async function uploadMeal(meal: OutboxMeal) {
-  for (const p of meal.photos) {
-    for (const kind of ["original", "display"] as const) {
+  // Display copies first: they're small, so a short stay in the app still gets them done.
+  const total = meal.photos.reduce((n, p) => n + p.original.size + p.display.size, 0);
+  let sent = meal.photos.reduce((n, p) => n + (p.uploaded.original ? p.original.size : 0) + (p.uploaded.display ? p.display.size : 0), 0);
+  changed({ progress: { sent, total } });
+  for (const kind of ["display", "original"] as const) {
+    for (const p of meal.photos) {
       if (p.uploaded[kind]) continue;
       const blob = kind === "original" ? p.original : p.display;
       await request(`/api/photos/${p.id}/${kind}`, {
@@ -158,6 +179,8 @@ async function uploadMeal(meal: OutboxMeal) {
         body: blob,
       });
       p.uploaded[kind] = true;
+      sent += blob.size;
+      changed({ progress: { sent, total } });
       await putMeal(meal); // remember progress, so a retry skips finished files
     }
   }
@@ -190,12 +213,22 @@ async function uploadMeal(meal: OutboxMeal) {
   }
 }
 
+// Generous for a slow connection (≈100 KB/s), but finite: a request that never settles
+// would otherwise block every later upload.
+const timeoutFor = (body: BodyInit | null | undefined) => 20_000 + (body instanceof Blob ? body.size / 100 : 0);
+
 async function request(url: string, init: RequestInit) {
+  const ctrl = new AbortController();
+  inflight = ctrl;
+  const timer = setTimeout(() => ctrl.abort(), timeoutFor(init.body));
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, signal: ctrl.signal });
   } catch {
-    throw new Offline("offline");
+    throw new Offline("offline"); // network down, timed out, or abandoned on return to the app
+  } finally {
+    clearTimeout(timer);
+    if (inflight === ctrl) inflight = null;
   }
   if (res.ok) return res;
   if (res.status === 401) throw new SignedOut("signed_out");

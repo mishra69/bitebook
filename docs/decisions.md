@@ -94,3 +94,18 @@ are listed in `.skill-assets` and checked for drift with the skill's `sync-asset
 One finding goes beyond the skill: Vite marks its bundles `crossorigin`, so a
 `Vary: Origin` response header makes the cache lookup miss when offline. `sw.js`
 therefore matches with `ignoreVary`.
+
+## D11 · 2026-10-17 · Uploads only progress while the app is open (iOS)
+
+Found on the first real meal: the upload sat for about 20 minutes. iOS freezes a
+backgrounded web app within seconds and offers web apps no background upload. So an
+upload only moves while Bitebook is on screen. A request frozen mid-flight may also never
+settle, which blocked every later upload until a relaunch. In response:
+- every request has a timeout;
+- returning to the app abandons the in-flight request and restarts the queue (each step
+  is idempotent, so redoing it is safe);
+- display copies upload before originals;
+- the app shows progress and asks the user to keep it open until uploads finish.
+
+The same meal showed that iOS hands the app JPEG, not HEIC, and that Safari ignores
+`canvas.toBlob`'s quality argument. Display copies are now encoded with `toDataURL`.

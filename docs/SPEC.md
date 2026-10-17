@@ -252,8 +252,11 @@ tested in Chromium: EXIF time, drafts surviving a reload, offline save, the queu
 draining on reconnect, and originals byte-identical in R2. These are only knowable on the
 phone. Delete this section once they're checked:
 
-- **HEIC:** which format the camera hands the app, and whether the display copy renders
-  (the app falls back from `createImageBitmap` to `<img>`).
+- **Display size on iOS:** the next photo's display copy should be a few hundred KB.
+  iOS Safari ignored `toBlob`'s quality setting (1.3 MB at ~0.95), so the app now encodes
+  with `toDataURL`.
+- **Resuming uploads:** after leaving the app mid-upload and coming back, the upload
+  should resume within seconds.
 - **Reload behind the camera:** if iOS reloads the app while the camera is open, the
   draft should come back.
 - **Offline:** capture in airplane mode, then reconnect. The meal should upload by

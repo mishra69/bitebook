@@ -52,7 +52,7 @@ export function MealList({ userId }: { userId: string }) {
           : waiting === 0 && failed === 0
             ? "All meals saved."
             : sync.syncing
-              ? `Uploading ${waiting} meal${waiting === 1 ? "" : "s"}…`
+              ? `Uploading ${waiting} meal${waiting === 1 ? "" : "s"}…${sync.progress ? ` ${mb(sync.progress.sent)} of ${mb(sync.progress.total)} MB` : ""}`
               : sync.offline
                 ? `Offline. ${waiting} meal${waiting === 1 ? "" : "s"} will upload when you're back online.`
                 : waiting
@@ -60,6 +60,9 @@ export function MealList({ userId }: { userId: string }) {
                   : ""}
         {failed > 0 && <span class="bad"> {failed} couldn't be uploaded.</span>}
       </p>
+      {waiting > 0 && !sync.signedOut && (
+        <p class="hint">Keep Bitebook open until this finishes. iPhone pauses apps in the background.</p>
+      )}
       <h2 class="section-title">Today</h2>
       {rows.length === 0 && server !== null && <p class="muted">No meals yet today.</p>}
       <ul class="meals">
@@ -70,6 +73,8 @@ export function MealList({ userId }: { userId: string }) {
     </section>
   );
 }
+
+const mb = (bytes: number) => (bytes / 1_048_576).toFixed(1);
 
 const takenAt = (r: Row) => (r.kind === "local" ? r.meal.takenAt : r.meal.taken_at);
 
