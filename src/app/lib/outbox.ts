@@ -1,4 +1,4 @@
-import type { Kind, MealType, NewMeal } from "../../shared/meals";
+import type { MealType, NewMeal } from "../../shared/meals";
 
 // Meals waiting to reach the server. A meal is written here the moment it's saved, so
 // capture works offline and survives the app being closed; it is deleted only after
@@ -20,7 +20,6 @@ export type OutboxPhoto = {
 export type OutboxMeal = {
   id: string;
   userId: string; // only the user who captured it uploads it
-  kind?: Kind; // missing on meals queued before labels existed: a meal
   takenAt: string;
   tz: string;
   mealType: MealType | null;
@@ -207,7 +206,6 @@ async function uploadMeal(meal: OutboxMeal) {
   }
   const body: NewMeal = {
     id: meal.id,
-    kind: meal.kind ?? "meal",
     taken_at: meal.takenAt,
     tz: meal.tz,
     meal_type: meal.mealType,

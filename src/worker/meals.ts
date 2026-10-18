@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { isUlid } from "../shared/ulid";
-import { KINDS, MEAL_TYPES, photoKey, type DeletedMeal, type Meal, type NewMeal } from "../shared/meals";
+import { MEAL_TYPES, photoKey, type DeletedMeal, type Meal, type NewMeal } from "../shared/meals";
 import { PURGE_AFTER_DAYS } from "./purge";
 
 // Uploads happen in two steps so a flaky connection never leaves a half-saved meal:
@@ -51,7 +51,6 @@ meals.put("/photos/:id/:kind{original|display}", async (c) => {
 meals.post("/meals", async (c) => {
   const user = c.get("user");
   const m = await c.req.json<NewMeal>().catch(() => null);
-  if (m && typeof m === "object" && m.kind === undefined) m.kind = "meal"; // queued by builds before labels existed
   const problem = validate(m);
   if (problem) return c.json({ error: "bad_request", detail: problem }, 400);
   const meal = m!;
@@ -76,9 +75,9 @@ meals.post("/meals", async (c) => {
   const now = new Date().toISOString();
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO meals (id, user_id, kind, taken_at, taken_ms, tz, meal_type, note, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
-    ).bind(meal.id, user.id, meal.kind, meal.taken_at, Date.parse(meal.taken_at), meal.tz, meal.meal_type, meal.note, now),
+      `INSERT INTO meals (id, user_id, taken_at, taken_ms, tz, meal_type, note, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    ).bind(meal.id, user.id, meal.taken_at, Date.parse(meal.taken_at), meal.tz, meal.meal_type, meal.note, now),
     ...keyed.map((p) =>
       c.env.DB.prepare(
         `INSERT INTO photos (id, user_id, meal_id, position, original_key, original_mime, original_bytes,
@@ -98,7 +97,7 @@ meals.get("/meals", async (c) => {
   const before = Number(c.req.query("before") ?? 0) || Number.MAX_SAFE_INTEGER;
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50) || 50, 1), 200);
   const { results: rows } = await c.env.DB.prepare(
-    `SELECT id, kind, taken_at, tz, meal_type, note, taken_ms FROM meals
+    `SELECT id, taken_at, tz, meal_type, note, taken_ms FROM meals
      WHERE user_id = ?1 AND deleted_at IS NULL AND taken_ms >= ?2 AND taken_ms < ?3
      ORDER BY taken_ms DESC LIMIT ?4`,
   )
@@ -114,7 +113,7 @@ meals.get("/meals", async (c) => {
 meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
   const user = c.get("user");
   const row = await c.env.DB.prepare(
-    "SELECT id, kind, taken_at, tz, meal_type, note FROM meals WHERE id = ?1 AND user_id = ?2 AND deleted_at IS NULL",
+    "SELECT id, taken_at, tz, meal_type, note FROM meals WHERE id = ?1 AND user_id = ?2 AND deleted_at IS NULL",
   )
     .bind(c.req.param("id"), user.id)
     .first<Omit<Meal, "photos">>();
@@ -171,7 +170,7 @@ meals.post("/meals/:id/restore", async (c) => {
 meals.get("/meals/deleted", async (c) => {
   const user = c.get("user");
   const { results } = await c.env.DB.prepare(
-    `SELECT m.id, m.kind, m.taken_at, m.meal_type, m.note, m.deleted_at,
+    `SELECT m.id, m.taken_at, m.meal_type, m.note, m.deleted_at,
             (SELECT p.id FROM photos p WHERE p.meal_id = m.id AND p.user_id = ?1 ORDER BY p.position LIMIT 1) AS cover_photo_id
      FROM meals m WHERE m.user_id = ?1 AND m.deleted_at IS NOT NULL
      ORDER BY m.deleted_at DESC LIMIT 200`,
@@ -200,8 +199,6 @@ meals.get("/photos/:id/display", async (c) => {
 function validate(m: NewMeal | null): string | null {
   if (!m || typeof m !== "object") return "body";
   if (!isUlid(m.id)) return "id";
-  if (!KINDS.includes(m.kind)) return "kind";
-  if (m.kind === "label" && m.meal_type !== null) return "meal_type";
   if (!isIsoWithOffset(m.taken_at)) return "taken_at";
   if (typeof m.tz !== "string" || m.tz.length === 0 || m.tz.length > 64) return "tz";
   if (m.meal_type !== null && !MEAL_TYPES.includes(m.meal_type)) return "meal_type";

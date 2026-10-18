@@ -8,8 +8,7 @@ export type Row = { kind: "server"; meal: Meal } | { kind: "local"; meal: Outbox
 
 export const rowTakenAt = (r: Row) => (r.kind === "local" ? r.meal.takenAt : r.meal.taken_at);
 
-export const mealLabel = (takenAt: string, kind: string | undefined, type: string | null) =>
-  `${timeOfDay(takenAt)} ${kind === "label" ? "label" : (type ?? "meal")}`;
+export const mealLabel = (takenAt: string, type: string | null) => `${timeOfDay(takenAt)} ${type ?? "meal"}`;
 
 // One meal in a list. Saved meals open their detail screen; meals still on the phone
 // show their upload state and can be deleted right here (there's nothing to open yet).
@@ -24,13 +23,12 @@ export function MealRow({ row }: { row: Row }) {
   );
   useEffect(() => () => void (row.kind === "local" && urls.forEach((u) => URL.revokeObjectURL(u))), [urls]);
 
-  const kind = row.meal.kind ?? "meal";
   const type = row.kind === "local" ? row.meal.mealType : row.meal.meal_type;
   const body = (
     <>
       <div class="meal-head">
         <strong>{timeOfDay(rowTakenAt(row))}</strong>
-        {kind === "label" ? <span class="chip small label">label</span> : type && <span class="chip on small">{type}</span>}
+        {type && <span class="chip on small">{type}</span>}
         {local && !local.error && <span class="badge">uploading</span>}
         {local?.error && (
           <button class="badge bad" onClick={() => retryMeal(local)} title={local.error}>

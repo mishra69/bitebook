@@ -123,7 +123,7 @@ function RecentlyDeleted({ version }: { version: number }) {
               <strong>
                 {m.taken_at.slice(0, 10)} {timeOfDay(m.taken_at)}
               </strong>{" "}
-              {m.kind === "label" ? "label" : (m.meal_type ?? "")}
+              {m.meal_type ?? ""}
               <br />
               <span class="muted small">Removed for good in {daysLeft(m.purge_at)} days</span>
             </span>

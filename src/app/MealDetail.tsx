@@ -23,7 +23,7 @@ export function MealDetail({ id }: { id: string }) {
 
   const date = new Date(meal.taken_at.slice(0, 10) + "T12:00:00");
   const remove = async () => {
-    if (await deleteSavedMeal(meal.id, mealLabel(meal.taken_at, meal.kind, meal.meal_type))) back();
+    if (await deleteSavedMeal(meal.id, mealLabel(meal.taken_at, meal.meal_type))) back();
   };
 
   return (
@@ -35,7 +35,7 @@ export function MealDetail({ id }: { id: string }) {
         {date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} · {timeOfDay(meal.taken_at)}
       </h2>
       <p>
-        {meal.kind === "label" ? <span class="chip small label">label</span> : meal.meal_type && <span class="chip on small">{meal.meal_type}</span>}
+        {meal.meal_type && <span class="chip on small">{meal.meal_type}</span>}
         <span class="muted small"> {meal.tz}</span>
       </p>
       <div class="detail-photos">
@@ -47,7 +47,7 @@ export function MealDetail({ id }: { id: string }) {
       <h3 class="section-title">Analysis</h3>
       <p class="muted">Not analyzed yet.</p>
       <button class="button secondary danger" onClick={remove}>
-        Delete {meal.kind === "label" ? "label" : "meal"}
+        Delete meal
       </button>
     </article>
   );

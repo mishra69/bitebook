@@ -152,3 +152,27 @@ copies are now encoded with `jpeg-js` from the canvas pixels: quality 0.8 on eve
 browser, about 250 KB per photo, loaded only when a photo is processed. The encoder is
 CommonJS and returns `Buffer.from(...)`; a one-line stand-in replaces that instead of
 patching the library.
+
+## D15 · 2026-10-18 · Approximate tracking; memory maintains itself (supersedes parts of D13)
+
+The label-and-pantry design from D13 drifted toward precise tracking: a Meal/Label
+switch at capture, and proposed pantry foods waiting for confirmation. Both are the
+kind of chore that makes people stop logging. New principle 10: approximate and
+consistent beats precise and abandoned.
+
+- **No label switch.** Any meal can include a photo of a package or label, and the
+  model uses what it can read. `meals.kind` is dropped (migration 0005); no real meal
+  used it.
+- **Rough estimates.** Each meal gets a description, kcal and macros, and a confidence.
+  Item breakdowns, gram weights and fiber are gone from the reply.
+- **Remembered foods replace the pantry.** Replies add, update or retire them directly,
+  with no confirmation step. The user can retire a wrong one but never has to manage the
+  list. A wrong memory can persist until noticed; at this level of precision that's
+  accepted, and each change records the batch that made it.
+- **A 30-day digest gives continuity.** Every prompt carries one text line per analyzed
+  meal from the last 30 days. That lets any model spot recurring dishes and stay
+  consistent across batches, which is the continuity a long chat thread would have
+  given, without its lossiness or its tie to one model.
+- **No monthly review prompt.** With the digest in every batch it would only add a
+  narrative, at the cost of a second prompt type and reply format. App-computed trends
+  cover long horizons, and a "copy digest" button can serve one-off questions later.

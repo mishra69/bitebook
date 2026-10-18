@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ulid } from "../shared/ulid";
-import { MEAL_TYPES, type Kind, type MealType } from "../shared/meals";
+import { MEAL_TYPES, type MealType } from "../shared/meals";
 import { preparePhoto } from "./lib/image";
 import { deleteMeal, getDraft, putMeal, sync, type OutboxMeal } from "./lib/outbox";
 import { deviceTz } from "./lib/time";
@@ -75,7 +75,6 @@ export function Capture({ userId }: { userId: string }) {
           : {
               id: ulid(),
               userId,
-              kind: "meal",
               takenAt: p.takenAt,
               tz: deviceTz(),
               mealType: suggestMealType(p.takenAt),
@@ -147,22 +146,6 @@ export function Capture({ userId }: { userId: string }) {
             ))}
             <button class="thumb add" onClick={openCamera} disabled={!!busy} aria-label="Add another photo">+</button>
           </div>
-          <div class="segmented" role="radiogroup" aria-label="What is this?">
-            {(["meal", "label"] as Kind[]).map((k) => (
-              <button
-                key={k}
-                role="radio"
-                aria-checked={(draft.kind ?? "meal") === k}
-                class={(draft.kind ?? "meal") === k ? "on" : ""}
-                onClick={() =>
-                  setDraft({ ...draft, kind: k, mealType: k === "label" ? null : (draft.mealType ?? suggestMealType(draft.takenAt)) })
-                }
-              >
-                {k === "meal" ? "Meal" : "Nutrition label"}
-              </button>
-            ))}
-          </div>
-          {(draft.kind ?? "meal") === "meal" && (
           <div class="chips" role="radiogroup" aria-label="Meal type">
             {MEAL_TYPES.map((t) => (
               <button
@@ -176,12 +159,11 @@ export function Capture({ userId }: { userId: string }) {
               </button>
             ))}
           </div>
-          )}
           <textarea
             class="note"
             rows={2}
             maxLength={2000}
-            placeholder={(draft.kind ?? "meal") === "label" ? "Note (optional): which product, size of pack…" : "Note (optional): half eaten, no oil, shared…"}
+            placeholder="Note (optional): half eaten, no oil, shared…"
             value={draft.note ?? ""}
             onInput={(e) => setNote(draft, (e.target as HTMLTextAreaElement).value)}
           />

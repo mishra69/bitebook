@@ -38,10 +38,14 @@ model analyses and the user's corrections.
    There are no sharing features. The operator can see all stored data. That is stated
    to users, not engineered around.
 9. **The app holds the memory, not the chat.** Every prompt carries the context the model
-   needs: the pantry, the user's standing notes and the recent trend. So any model, in a
-   fresh chat or through the API, sees the same memory, and each batch's stored prompt
-   records exactly what context an analysis was based on. Models only *propose* changes
-   to memory (a new pantry item from a label); the user confirms them (see D13).
+   needs: the user's notes, the remembered foods, a text digest of the last 30 days and a
+   trend the app computes. So any model, in a fresh chat or through the API, sees the
+   same memory, and each batch's stored prompt records exactly what context an analysis
+   was based on (see D13, D15).
+10. **Approximate and consistent beats precise and abandoned.** Logging must never become
+   a chore. Estimates are rough (a description, calories and macros per meal, with a
+   confidence), and nothing asks the user to weigh, look up or confirm anything. Memory
+   maintains itself; the user can look at it and remove things, but never has to (D15).
 
 ## 2. Architecture
 
@@ -65,9 +69,8 @@ Laptop
 **Capture.** Tap "New meal" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
 and queues both copies. The upload sends the original and the display copy. The meal is
-"pending analysis". A capture can instead be marked a **label**: a photo of a nutrition
-label or package. It travels in the next batch like a meal, but asks the model to read the
-label rather than estimate a plate.
+"pending analysis". A photo of a package or nutrition label can be part of any meal; the
+model uses whatever it can read.
 
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
@@ -77,15 +80,19 @@ into Import, with the model filled in automatically.
 
 **Import.** Paste the reply and select which model produced it. The app validates the reply against
 the batch (section 6) and, if it is valid, stores one analysis per meal and marks the batch as
-"imported". If it is invalid, nothing is stored and the errors are shown. Each label read
-in the reply becomes a **proposed** pantry food, waiting for the user's confirmation.
+"imported". If it is invalid, nothing is stored and the errors are shown. The reply's changes to
+remembered foods are applied at the same time, with no confirmation step.
 
-**Pantry and notes.** The pantry lists foods in use, with nutrition per serving taken from
-their labels. The user confirms or edits proposed foods, and marks a food finished when it
-runs out; only active foods go into prompts, each with a short code (`F1`, `F2`, …) that the
-model cites when it sees that food. Standing notes are free text the user writes once
-(goals, household recipes, usual portions) and edits whenever. Both, plus a trend the app
-computes from stored analyses, form the context block of every prompt.
+**Memory.** Every prompt starts with a context block built by the app:
+- **notes**: optional free text the user writes once (goals, household recipes, usual
+  portions);
+- **remembered foods**: foods the model asked to remember (from a label it read, or a dish
+  it saw recurring), each with a stable code (`F1`, `F2`, …) and rough values per serving;
+- **digest**: one text line per analyzed meal from the last 30 days, which is what lets
+  a model spot recurring dishes and stay consistent across batches;
+- **trend**: averages the app computes from stored analyses.
+
+The user can view remembered foods and retire one that's wrong, but never has to.
 
 **Correct.** On any meal, the user can fix items, portions or totals. Each correction is
 stored as a new row that references the analysis it corrects.
@@ -105,7 +112,8 @@ rows and files for good.
 > **Tier:** Contract · **Verified:** 2026-10-18 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
-> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003), `meals.kind` (0004).
+> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003).
+> (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
 users(id)`, and every query filters on the signed-in user's id. That includes child
@@ -132,24 +140,22 @@ All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC off
 --    deleted more than 30 days ago, with their photos (and, once they exist, their
 --    analyses and corrections).
 
-CREATE TABLE foods (                 -- the pantry
-  id            TEXT PRIMARY KEY,
-  user_id       TEXT NOT NULL REFERENCES users(id),
-  code          TEXT NOT NULL,       -- 'F1', 'F2', … per user, never reused
-  name          TEXT NOT NULL,       -- 'Mission whole wheat tortilla'
-  serving_desc  TEXT NOT NULL,       -- '1 tortilla'
-  serving_g     REAL,
-  kcal          REAL, protein_g REAL, carbs_g REAL, fat_g REAL, fiber_g REAL,  -- per serving
-  status        TEXT NOT NULL,       -- 'proposed' | 'active' | 'finished' | 'rejected'
-  source_meal_id     TEXT REFERENCES meals(id),     -- the label capture it came from
-  source_analysis_id TEXT REFERENCES analyses(id),
-  created_at    TEXT NOT NULL,
-  activated_at  TEXT,
-  finished_at   TEXT,
+CREATE TABLE foods (                 -- remembered foods, maintained by model replies
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id),
+  code            TEXT NOT NULL,     -- 'F1', 'F2', … per user, never reused
+  name            TEXT NOT NULL,     -- 'Mission whole wheat tortilla', 'usual dal tadka'
+  serving         TEXT NOT NULL,     -- '1 tortilla (45 g)', '1 bowl'
+  kcal            REAL, protein_g REAL, carbs_g REAL, fat_g REAL,  -- per serving, rough
+  status          TEXT NOT NULL,     -- 'active' | 'retired'
+  source_batch_id TEXT REFERENCES batches(id),   -- the reply that last added or changed it
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  retired_at      TEXT,
   UNIQUE (user_id, code)
 );
 
-CREATE TABLE notes (                 -- standing notes; the prompt includes all of them
+CREATE TABLE notes (                 -- the user's notes; the prompt includes all of them
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id),
   body        TEXT NOT NULL,
@@ -228,40 +234,40 @@ The app renders the prompt as plain text. The images are attached alongside it a
 self-describing even if the attachment order gets shuffled.
 
 ```
-You are analyzing my meal log. Batch: {batch_id}
+You are helping me keep an approximate food log from photos. Rough, consistent
+estimates are the goal; precision isn't. Batch: {batch_id}
 
-Each meal below has a key, and its photos are attached with filenames starting
-with that key. Times are my local time.
+## What you know about me (from my app)
+Notes: {notes, or "—"}
 
-## Context (from my app; treat it as reliable)
-Standing notes:
-{each note, or "—"}
-Pantry — foods I'm currently using, with values from their labels. When you see one,
-use these values and cite its code:
-[F1] Mission whole wheat tortilla — 1 tortilla (45 g): 130 kcal · P 4 g · C 22 g · F 3.5 g · fiber 4 g
+Remembered foods (codes stay the same across batches):
+[F1] Mission whole wheat tortilla · 1 tortilla (45 g) · 130 kcal · P4 C22 F3.5
 {… or "—"}
-Recent trend (computed by the app from past analyses): last 7 days, {n} meals,
-avg {kcal} kcal/day · protein {p} g/day. Last batch summary: {text or "—"}
 
-## Entries
-{for each entry}
-[{key}] {weekday} {YYYY-MM-DD} {HH:MM} · {meal_type or "meal" | "LABEL"} · photos: {filenames}
-Note: {note or "—"}
-{end}
+Last 30 days, one line per analyzed meal, newest first:
+Oct 16 Thu 19:30 dinner · dal tadka with 2 rotis · ~550 kcal · P20 C75 F18
+{… or "—"}
 
-For each meal, identify the foods, estimate portions, and estimate nutrition. Use pantry
-values for pantry foods and set food_code. Use my notes when they clarify something the
-photo can't show (e.g. "half eaten", "oil-free"). If a photo is unusable, mark that entry
-skipped and say why.
+Last 7 days: {n} days logged · avg {kcal} kcal/day · protein {p} g/day
 
-For each LABEL entry, read the nutrition label instead: name, serving and per-serving
-values exactly as printed. Don't estimate a plate for it.
+## New meals (times are my local time)
+[A] Fri 2026-10-17 19:32 · dinner · photos: A-1_2026-10-17_1932.jpg, A-2_2026-10-17_1932.jpg
+Note: {note, or "—"}
+{…}
 
-Then write a short summary across the whole batch: patterns, anything notable,
-and one or two practical suggestions.
+## What to do
+1. For each meal: describe it in a few words and estimate kcal, protein, carbs and fat
+   for what was eaten. If a nutrition label or package is visible, use it. When you
+   recognize a remembered food, use its values and list its code in foods_used. Stay
+   consistent with how similar meals in the last 30 days were estimated. If a photo is
+   unusable, mark the meal skipped and say why.
+2. Changes to what I should remember: add a food when you read a label or see the same
+   dish recurring in the last 30 days; update one whose values look off; retire one I
+   seem to have stopped eating. Only list changes. Most batches need none.
+3. Two or three sentences on this batch, with one practical suggestion.
 
-Reply with ONLY one JSON code block matching this schema, with no other text:
-{reply schema, inlined with an example}
+Reply with ONLY one JSON code block in exactly this format, with no other text:
+{the reply example below}
 ```
 
 ### Reply (`bitebook.reply/1`)
@@ -275,37 +281,24 @@ Reply with ONLY one JSON code block matching this schema, with no other text:
       "key": "A",
       "skipped": false,
       "skip_reason": null,
-      "items": [
-        { "name": "dal tadka", "portion": "1 bowl", "grams": 250, "food_code": null,
-          "kcal": 280, "protein_g": 14, "carbs_g": 36, "fat_g": 9, "fiber_g": 8 },
-        { "name": "tortilla", "portion": "2 tortillas", "grams": 90, "food_code": "F1",
-          "kcal": 260, "protein_g": 8, "carbs_g": 44, "fat_g": 7, "fiber_g": 8 }
-      ],
-      "totals": { "kcal": 280, "protein_g": 14, "carbs_g": 36, "fat_g": 9, "fiber_g": 8 },
+      "description": "dal tadka with 2 tortillas",
+      "kcal": 540, "protein_g": 22, "carbs_g": 70, "fat_g": 16,
       "confidence": "medium",
-      "observations": "Looks like ~1 tsp ghee on top.",
-      "questions": ["Was the rice white or brown?"]
-    },
-    {
-      "key": "B",
-      "skipped": false,
-      "skip_reason": null,
-      "label": {
-        "name": "Mission whole wheat tortilla", "serving_desc": "1 tortilla", "serving_g": 45,
-        "kcal": 130, "protein_g": 4, "carbs_g": 22, "fat_g": 3.5, "fiber_g": 4
-      },
-      "confidence": "high",
-      "observations": "Values per tortilla, as printed.",
-      "questions": []
+      "foods_used": ["F1"],
+      "comment": "Looks like about 1 tsp ghee on the dal."
     }
   ],
-  "summary": {
-    "text": "…",
-    "patterns": ["…"],
-    "suggestions": ["…"]
-  }
+  "remember": [
+    { "action": "add", "code": null, "name": "usual dal tadka", "serving": "1 bowl",
+      "kcal": 280, "protein_g": 14, "carbs_g": 36, "fat_g": 9,
+      "reason": "Same dish in 6 of the last 30 days." }
+  ],
+  "summary": { "text": "…", "suggestion": "…" }
 }
 ```
+
+`action` is `add` (with `code: null`; the app assigns the next code), `update` (with an
+existing code and the new values) or `retire` (with an existing code; values are ignored).
 
 ### Import validation
 
@@ -319,10 +312,8 @@ The import is all-or-nothing. If any check fails, nothing is stored.
 - The set of `meals[].key` values must be **exactly** the batch's keys: none missing, none
   extra, no duplicates.
 - Numbers must be ≥ 0 or null. `confidence` must be one of low, medium or high.
-- A meal entry has `items` and `totals`. A LABEL entry has `label` instead. Each label
-  becomes a `proposed` food, and nothing enters prompts until the user confirms it.
-- `food_code`, when set, must be one of the active codes listed in this batch's prompt.
-- Totals that differ from the sum of the items by more than 10% produce a warning, not an error.
+- `foods_used` codes and `update`/`retire` codes must be remembered foods that were
+  active when the batch was created.
 - Skipped meals are stored as analyses with `skipped: true` but **remain pending**, so
   they show up in the next export.
 
@@ -407,8 +398,7 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 Built: Today (capture), Timeline and Meal detail (`src/app/`). Still to come: badges for
 in-batch or analyzed on timeline rows, and analyses and corrections on the detail screen.
 
-4. **Pantry and notes:** proposed foods to confirm or edit, active foods (mark finished),
-   finished ones; the standing notes.
+4. **Memory:** the notes (editable) and the remembered foods (each can be retired).
 5. **Export:** select meals, then share or copy, or use "Run via API" when a key is
    configured. The batch is created at this step.
 6. **Import:** pick the open batch, paste the reply, pick the model, then validate and save.
@@ -421,7 +411,7 @@ in-batch or analyzed on timeline rows, and analyses and corrections on the detai
 *Steps 1–3 are built. The remaining on-device checks for capture are in §7.*
 
 4. Export: batch creation, the prompt with its context block, and the share/copy handoff.
-5. Import: validation and storage, including proposed foods; the pantry and notes screen.
+5. Import: validation and storage, applying remembered-food changes; the Memory screen.
 6. Corrections.
 7. The roll-off script.
 8. The API path (optional; it reuses everything from steps 4–5).
