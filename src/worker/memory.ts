@@ -62,3 +62,19 @@ memory.post("/foods/:code/:to{retire|restore}", async (c) => {
     .run();
   return res.meta.changes ? c.json({ ok: true }) : c.json({ error: "not_found" }, 404);
 });
+
+// Questions a model asked before replying (prompt/4). Every prompt lists them so they aren't
+// asked again; deleting one lets it be asked again.
+memory.get("/questions", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, topic, question, answer, created_at FROM questions WHERE user_id = ?1 ORDER BY created_at DESC LIMIT 200",
+  )
+    .bind(c.get("user").id)
+    .all();
+  return c.json({ questions: results });
+});
+
+memory.delete("/questions/:id", async (c) => {
+  const res = await c.env.DB.prepare("DELETE FROM questions WHERE id = ?1 AND user_id = ?2").bind(c.req.param("id"), c.get("user").id).run();
+  return res.meta.changes ? c.json({ ok: true }) : c.json({ error: "not_found" }, 404);
+});

@@ -170,3 +170,4 @@ ul { margin: 0; padding-left: 1.2rem; }
 .memory .card { margin-bottom: 0.75rem; display: grid; gap: 0.5rem; justify-items: start; }
 .memory .card .note { width: 100%; }
 .tabs a { padding: 0.5rem 0.25rem; font-size: 0.95rem; }
+.asked { margin: 0.5rem 0 0; padding-left: 1.1rem; }

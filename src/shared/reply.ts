@@ -37,8 +37,12 @@ export type Reply = {
   model: string | null; // the model's own claim about itself (prompt/3); may be wrong
   meals: MealResult[];
   remember: RememberChange[];
+  asked: { topic: string; question: string; answer: string | null }[];
   summary: { text: string; suggestion: string | null };
 };
+
+// More than this is the model ignoring the cap of 2; keep a few as history, drop the rest.
+const MAX_ASKED_KEPT = 5;
 
 export type BatchFacts = { id: string; keys: string[]; activeCodes: string[] };
 
@@ -168,6 +172,14 @@ export function validateReply(raw: unknown, batch: BatchFacts): { reply: Reply |
     });
   }
 
+  // "asked" is history, not data the estimates depend on: be forgiving about its form.
+  const asked: Reply["asked"] = [];
+  for (const q of Array.isArray(raw.asked) ? raw.asked : []) {
+    const question = isObj(q) ? str(q.question) : null;
+    if (!question || question.startsWith("<") || asked.length >= MAX_ASKED_KEPT) continue; // "<…>": the sample echoed back
+    asked.push({ topic: (isObj(q) && str(q.topic)) || question.slice(0, 40), question, answer: isObj(q) ? str(q.answer) || null : null });
+  }
+
   const summary = isObj(raw.summary) ? raw.summary : {};
   const reply: Reply = {
     schema: REPLY_SCHEMA,
@@ -175,6 +187,7 @@ export function validateReply(raw: unknown, batch: BatchFacts): { reply: Reply |
     model: selfReportedModel(raw),
     meals,
     remember,
+    asked,
     summary: { text: str(summary.text) ?? "", suggestion: str(summary.suggestion) },
   };
   return errors.length ? { reply: null, errors } : { reply, errors };

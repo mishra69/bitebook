@@ -38,6 +38,7 @@ describe("buildPrompt", () => {
     foods: [],
     digest: [],
     trend: { days: 0, kcal: null, protein_g: null },
+    asked: [],
     meals: [{ key: "A", taken_at: "2026-10-16T19:32:05-05:00", meal_type: "dinner" as const, note: null, photos: [{ position: 1 }, { position: 0 }] }],
   };
   it("shows empty memory as dashes, lists meals with their photo files, and asks for the reply format", () => {
@@ -52,6 +53,10 @@ describe("buildPrompt", () => {
     expect(p).toContain("suggest I add it to my notes in Bitebook");
     expect(p).toContain('Set "model" to your own model name and version');
     expect(p).toContain('"model": "<your model name and version, as you know it, or null>"');
+    expect(p).toContain("Questions already asked (don't ask these again; use the answers):\n—");
+    expect(p).toContain("Ask at most\n   2, together in one message, then wait for my answers before writing the JSON.");
+    expect(p).toContain("Your final reply must be ONLY one JSON code block");
+    expect(p).toContain('"topic": "<short topic>"');
   });
   it("includes notes, remembered foods, the digest (capped) and the trend", () => {
     const digest = Array.from({ length: 200 }, (_, i) => entry(`2026-10-${String(1 + (i % 15)).padStart(2, "0")}T12:00:00-05:00`, 500, 20));
@@ -66,5 +71,20 @@ describe("buildPrompt", () => {
     expect(p).toContain("[F1] Mission whole wheat tortilla · 1 tortilla (45 g) · 130 kcal · P4 C22 F3.5");
     expect(p.match(/· dal tadka with 2 rotis ·/g)).toHaveLength(150);
     expect(p).toContain("Last 7 days: 3 days logged · avg 1800 kcal/day · protein 70 g/day");
+  });
+});
+
+describe("questions already asked (prompt/4)", () => {
+  it("lists them newest first, with answers or a best-guess note", () => {
+    const p = buildPrompt({
+      batchId: "01B", notes: [], foods: [], digest: [], trend: { days: 0, kcal: null, protein_g: null }, meals: [],
+      asked: [
+        { topic: "curry protein", question: "Chicken or paneer in the curry?", answer: "paneer", asked_at: "2026-10-18T19:00:00.000Z" },
+        { topic: "shake sweetener", question: "Any honey in the shake?", answer: null, asked_at: "2026-10-16T19:00:00.000Z" },
+      ],
+    });
+    expect(p).toContain(
+      "- Oct 18 · curry protein: Chicken or paneer in the curry? → paneer\n- Oct 16 · shake sweetener: Any honey in the shake? → no answer (use your best guess)",
+    );
   });
 });

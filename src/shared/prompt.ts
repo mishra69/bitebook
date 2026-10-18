@@ -5,7 +5,10 @@ import type { MealType } from "./meals";
 
 // prompt/2 (2026-10-18): suggestions point to Bitebook notes, since a model can't save them.
 // prompt/3 (2026-10-18): the reply names the model that wrote it, as far as it knows (D17).
-export const PROMPT_VERSION = "prompt/3";
+// prompt/4 (2026-10-18): up to 2 questions in the chat before the JSON, never repeated (D18).
+export const PROMPT_VERSION = "prompt/4";
+export const MAX_QUESTIONS = 2;
+export const ASKED_MAX_LINES = 60;
 export const REPLY_SCHEMA = "bitebook.reply/1";
 export const DIGEST_DAYS = 30;
 export const DIGEST_MAX_LINES = 150;
@@ -32,6 +35,8 @@ export type DigestEntry = {
 };
 
 export type Trend = { days: number; kcal: number | null; protein_g: number | null };
+
+export type AskedQuestion = { topic: string; question: string; answer: string | null; asked_at: string };
 
 export type PromptMeal = {
   key: string;
@@ -113,6 +118,8 @@ export const REPLY_EXAMPLE = {
       reason: "Same dish in 6 of the last 30 days.",
     },
   ],
+  // A neutral sample, so it can't be mistaken for a real question already asked.
+  asked: [{ topic: "<short topic>", question: "<the question you asked>", answer: "<my answer, or null>" }],
   summary: { text: "…", suggestion: "…" },
 };
 
@@ -122,12 +129,19 @@ export type PromptInput = {
   foods: RememberedFood[];
   digest: DigestEntry[]; // newest first
   trend: Trend;
+  asked: AskedQuestion[]; // newest first
   meals: PromptMeal[]; // in key order
 };
+
+export function askedLine(q: AskedQuestion): string {
+  const d = q.asked_at;
+  return `- ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(8, 10)} · ${q.topic}: ${q.question} → ${q.answer?.trim() || "no answer (use your best guess)"}`;
+}
 
 export function buildPrompt(p: PromptInput): string {
   const notes = p.notes.map((n) => n.trim()).filter(Boolean);
   const digest = p.digest.slice(0, DIGEST_MAX_LINES);
+  const asked = p.asked.slice(0, ASKED_MAX_LINES);
   const meals = p.meals
     .map((m) => {
       const files = [...m.photos].sort((a, b) => a.position - b.position).map((ph) => photoFileName(m.key, ph.position, m.taken_at));
@@ -155,10 +169,18 @@ ${digest.length ? digest.map(digestLine).join("\n") : "—"}
 
 ${trend}
 
+Questions already asked (don't ask these again; use the answers):
+${asked.length ? asked.map(askedLine).join("\n") : "—"}
+
 ## New meals (times are my local time)
 ${meals}
 
 ## What to do
+0. Questions come first, and usually there are none. Ask only if an answer would change
+   an estimate by roughly 100 kcal or more, or would matter for future meals. Ask at most
+   ${MAX_QUESTIONS}, together in one message, then wait for my answers before writing the JSON.
+   Never ask anything listed under "Questions already asked". If I skip a question or
+   don't know, use your best assumption and say so in the comment.
 1. For each meal: describe it in a few words and estimate kcal, protein, carbs and fat
    for what was eaten. If a nutrition label or package is visible, use it. When you
    recognize a remembered food, use its values and list its code in foods_used. Stay
@@ -174,8 +196,10 @@ ${meals}
    and every future batch sees them.
 
 Set "model" to your own model name and version as you know it, or null if you don't know.
-Every meal key above must appear exactly once in "meals". Reply with ONLY one JSON code
-block in exactly this format, with no other text:
+In "asked", list the questions you asked me in this chat with my answers (answer null if I
+didn't answer); it's [] when you asked nothing. Every meal key above must appear exactly
+once in "meals". Your final reply must be ONLY one JSON code block in exactly this format,
+with no other text:
 \`\`\`json
 ${JSON.stringify({ ...REPLY_EXAMPLE, batch_id: p.batchId }, null, 2)}
 \`\`\`

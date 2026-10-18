@@ -81,7 +81,9 @@ into Import, with the model filled in automatically.
 **Import.** Paste the reply and select which model produced it. The app validates the reply against
 the batch (section 6) and, if it is valid, stores one analysis per meal and marks the batch as
 "imported". If it is invalid, nothing is stored and the errors are shown. The reply's changes to
-remembered foods are applied at the same time, with no confirmation step.
+remembered foods are applied at the same time, with no confirmation step. If the model needed to ask something (at most two questions, only when it
+matters), it asked in the chat before replying, so the answers are already in its
+estimates. The app records the questions so they're never asked again.
 
 **Memory.** Every prompt starts with a context block built by the app:
 - **notes**: optional free text the user writes once (goals, household recipes, usual
@@ -186,7 +188,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/3`)
+### Prompt (`prompt/4`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -201,6 +203,11 @@ code can't say:
   The trend is computed by the app, never by the model.
 - A batch is capped at 20 photos (`MAX_PHOTOS_PER_BATCH`), a common per-message
   attachment limit in chat apps.
+- Questions happen in the chat, before the JSON (D18): at most 2, only when an answer would
+  move an estimate by about 100 kcal or matter for future meals, and never one listed under
+  "Questions already asked". The model folds the answers into its one reply; nothing is
+  re-analyzed. The reply's `asked` list goes into the `questions` table (migration 0008),
+  which feeds that block in every later prompt (newest 60).
 
 ### Reply (`bitebook.reply/1`) and import
 
@@ -220,6 +227,8 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
   self-report in `batches.reply_model_reported`. Models misname themselves often enough
   that the self-report is never the record on its own (D17).
 - A skipped meal gets an analysis row with `skipped = 1` and stays ready to analyze.
+- `asked` is history, not data the estimates depend on, so it never fails an import: a
+  malformed list counts as no questions, and an echoed sample is ignored.
 
 ## 7. Capture: what still needs an iPhone
 

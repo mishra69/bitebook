@@ -73,3 +73,27 @@ describe("selfReportedModel (prompt/3)", () => {
     expect(parse(real).reply!.model).toBeNull();
   });
 });
+
+describe("asked questions (prompt/4)", () => {
+  it("keeps what was asked and answered, forgiving about form", () => {
+    const { reply, errors } = parse(edit((r) => (r.asked = [
+      { topic: "curry protein", question: "Chicken or paneer?", answer: "paneer" },
+      { question: "Any honey in the shake?", answer: "" },
+      { topic: "junk" },
+      "not an object",
+    ])));
+    expect(errors).toEqual([]);
+    expect(reply!.asked).toEqual([
+      { topic: "curry protein", question: "Chicken or paneer?", answer: "paneer" },
+      { topic: "Any honey in the shake?", question: "Any honey in the shake?", answer: null },
+    ]);
+  });
+  it("treats a missing or malformed list as no questions, and keeps at most 5", () => {
+    expect(parse(real).reply!.asked).toEqual([]);
+    expect(parse(edit((r) => (r.asked = "none"))).reply!.asked).toEqual([]);
+    const echoed = { topic: "<short topic>", question: "<the question you asked>", answer: "<my answer, or null>" };
+    expect(parse(edit((r) => (r.asked = [echoed]))).reply!.asked).toEqual([]);
+    const many = Array.from({ length: 8 }, (_, i) => ({ topic: `t${i}`, question: `q${i}?`, answer: "a" }));
+    expect(parse(edit((r) => (r.asked = many))).reply!.asked).toHaveLength(5);
+  });
+});

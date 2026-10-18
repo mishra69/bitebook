@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { showToast } from "./lib/notify";
 
 type Note = { id: string; body: string };
+type Question = { id: string; topic: string; question: string; answer: string | null; created_at: string };
 type Food = {
   code: string;
   name: string;
@@ -18,13 +19,19 @@ type Food = {
 export function Memory() {
   const [notes, setNotes] = useState<Note[] | null>(null);
   const [foods, setFoods] = useState<Food[] | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [draft, setDraft] = useState("");
 
   const load = async () => {
     try {
-      const [n, f] = await Promise.all([fetch("/api/notes").then((r) => r.json()), fetch("/api/foods").then((r) => r.json())]);
+      const [n, f, q] = await Promise.all([
+        fetch("/api/notes").then((r) => r.json()),
+        fetch("/api/foods").then((r) => r.json()),
+        fetch("/api/questions").then((r) => r.json()),
+      ]);
       setNotes((n as { notes: Note[] }).notes);
       setFoods((f as { foods: Food[] }).foods);
+      setQuestions((q as { questions: Question[] }).questions);
     } catch {
       showToast({ text: "Couldn't load memory. Are you online?" });
     }
@@ -82,6 +89,25 @@ export function Memory() {
             <p class="muted small">
               {f.serving} · {n(f.kcal)} kcal · P{n(f.protein_g)} C{n(f.carbs_g)} F{n(f.fat_g)}
             </p>
+          </li>
+        ))}
+      </ul>
+      <h2 class="section-title">Questions already asked</h2>
+      <p class="muted small">Every analysis sees these, so it won't ask them again. Tap "Ask again" to let a question come back.</p>
+      {questions.length === 0 && <p class="muted">No questions asked yet.</p>}
+      <ul class="meals">
+        {questions.map((q) => (
+          <li key={q.id} class="meal">
+            <div class="meal-head">
+              <span>
+                {q.question}
+                <br />
+                <span class="muted small">→ {q.answer ?? "no answer"}</span>
+              </span>
+              <button class="link push" onClick={() => call(`/api/questions/${q.id}`, "DELETE")}>
+                Ask again
+              </button>
+            </div>
           </li>
         ))}
       </ul>

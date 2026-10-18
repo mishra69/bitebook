@@ -9,6 +9,7 @@ import {
   buildPrompt,
   computeTrend,
   photoFileName,
+  type AskedQuestion,
   type DigestEntry,
   type RememberedFood,
 } from "../shared/prompt";
@@ -27,6 +28,7 @@ export type BatchView = {
   reply_model_reported: string | null;
   imported_at: string | null;
   summary: { text: string; suggestion: string | null } | null;
+  asked: { topic: string; question: string; answer: string | null }[];
   entries: { key: string; meal: Meal; files: { photo_id: string; name: string }[] }[];
 };
 
@@ -66,7 +68,7 @@ batches.post("/batches", async (c) => {
   const photoCount = meals.reduce((n, m) => n + m.photos.length, 0);
   if (photoCount > MAX_PHOTOS_PER_BATCH) return c.json({ error: "too_many_photos", max: MAX_PHOTOS_PER_BATCH }, 413);
 
-  const [notes, foods, digest] = await Promise.all([
+  const [notes, foods, digest, asked] = await Promise.all([
     c.env.DB.prepare("SELECT body FROM notes WHERE user_id = ?1 ORDER BY created_at").bind(user.id).all<{ body: string }>(),
     c.env.DB.prepare(
       "SELECT code, name, serving, kcal, protein_g, carbs_g, fat_g FROM foods WHERE user_id = ?1 AND status = 'active' ORDER BY CAST(substr(code, 2) AS INTEGER)",
@@ -74,6 +76,11 @@ batches.post("/batches", async (c) => {
       .bind(user.id)
       .all<RememberedFood>(),
     loadDigest(c.env.DB, user.id),
+    c.env.DB.prepare(
+      "SELECT topic, question, answer, created_at AS asked_at FROM questions WHERE user_id = ?1 ORDER BY created_at DESC LIMIT 60",
+    )
+      .bind(user.id)
+      .all<AskedQuestion>(),
   ]);
 
   const id = ulid();
@@ -84,6 +91,7 @@ batches.post("/batches", async (c) => {
     foods: foods.results,
     digest,
     trend: computeTrend(digest, Date.now()),
+    asked: asked.results,
     meals: meals.map((m, i) => ({ key: batchKey(i), ...m })),
   });
   await c.env.DB.prepare(
@@ -183,6 +191,13 @@ batches.post("/batches/:id/import", async (c) => {
       );
     }
   }
+  for (const q of reply.asked) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO questions (id, user_id, batch_id, topic, question, answer, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+      ).bind(ulid(), user.id, batch.id, q.topic, q.question, q.answer, now),
+    );
+  }
   stmts.push(
     c.env.DB.prepare(
       `UPDATE batches SET status = 'imported', reply_raw = ?3, reply_model = ?4, summary = ?5, imported_at = ?6,
@@ -197,6 +212,7 @@ batches.post("/batches/:id/import", async (c) => {
     analyzed: reply.meals.filter((m) => !m.skipped).length,
     skipped: reply.meals.filter((m) => m.skipped).map((m) => ({ key: m.key, reason: m.skip_reason })),
     remembered,
+    asked: reply.asked,
     summary: reply.summary,
   });
 });
@@ -236,6 +252,10 @@ async function viewBatches(db: D1Database, userId: string, where: string, arg: s
       .bind(userId, JSON.stringify(Object.values(keyMap)))
       .all<Omit<Meal, "photos">>();
     const meals = new Map((await attachPhotos(db, userId, rows)).map((m) => [m.id, m]));
+    const { results: asked } = await db
+      .prepare("SELECT topic, question, answer FROM questions WHERE user_id = ?1 AND batch_id = ?2 ORDER BY created_at")
+      .bind(userId, b.id)
+      .all<BatchView["asked"][number]>();
     out.push({
       id: b.id,
       created_at: b.created_at,
@@ -245,6 +265,7 @@ async function viewBatches(db: D1Database, userId: string, where: string, arg: s
       reply_model_reported: b.reply_model_reported,
       imported_at: b.imported_at,
       summary: b.summary ? JSON.parse(b.summary) : null,
+      asked,
       entries: Object.entries(keyMap)
         .filter(([, mealId]) => meals.has(mealId)) // a meal deleted after batching drops out
         .map(([key, mealId]) => {

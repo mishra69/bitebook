@@ -152,3 +152,29 @@ test("the reply's own model name fills the Model box, and both it and the confir
   const meal = (await (await request.get(`/api/meals/${a}`)).json()).meal;
   expect(meal.analyses[0].model).toBe("Claude Opus 5.5 (Claude app)");
 });
+
+test("questions asked in the chat are remembered, listed in later prompts, and can be asked again", async ({ page, request }) => {
+  await clearPending(request);
+  const a = await seedMeal(request, "2026-10-12T13:00:00-05:00", "questions A");
+  const b = await seedMeal(request, "2026-10-12T19:00:00-05:00", "questions B");
+  const batchId = (await (await request.post("/api/batches", { data: { meal_ids: [a, b] } })).json()).batch.id;
+  const reply = replyFor(batchId, (r) => (r.asked = [{ topic: "curry protein", question: "Was the curry chicken or paneer?", answer: "paneer" }]));
+  const res = await (await request.post(`/api/batches/${batchId}/import`, { data: { reply: JSON.stringify(reply), model: "test model" } })).json();
+  expect(res.asked).toHaveLength(1);
+
+  await openApp(page, "#/analyze");
+  await expect(page.locator(".summary .asked")).toContainText("Was the curry chicken or paneer? → paneer");
+
+  const c = await seedMeal(request, "2026-10-18T10:00:00-05:00", "questions C");
+  const next = (await (await request.post("/api/batches", { data: { meal_ids: [c] } })).json()).batch;
+  expect(next.prompt).toMatch(/· curry protein: Was the curry chicken or paneer\? → paneer/);
+  await request.post(`/api/batches/${next.id}/abandon`);
+
+  await page.goto("/#/memory");
+  const row = page.locator(".memory .meal", { hasText: "Was the curry chicken or paneer?" });
+  await expect(row).toContainText("→ paneer");
+  await row.getByRole("button", { name: "Ask again" }).click();
+  await expect(row).toHaveCount(0);
+  const after = (await (await request.post("/api/batches", { data: { meal_ids: [c] } })).json()).batch;
+  expect(after.prompt).not.toMatch(/· curry protein: /);
+});

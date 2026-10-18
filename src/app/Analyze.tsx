@@ -13,6 +13,7 @@ type BatchView = {
   reply_model: string | null;
   imported_at: string | null;
   summary: { text: string; suggestion: string | null } | null;
+  asked: { topic: string; question: string; answer: string | null }[];
   entries: { key: string; meal: Meal; files: { photo_id: string; name: string }[] }[];
 };
 
@@ -140,6 +141,15 @@ function LastSummary({ batch }: { batch: BatchView }) {
       </p>
       <p>{batch.summary!.text}</p>
       {batch.summary!.suggestion && <p class="suggestion">💡 {batch.summary!.suggestion}</p>}
+      {batch.asked.length > 0 && (
+        <ul class="asked small">
+          {batch.asked.map((q) => (
+            <li key={q.question}>
+              {q.question} <span class="muted">→ {q.answer ?? "no answer"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </article>
   );
 }
@@ -192,6 +202,7 @@ function ImportBox({ batchId, onImported }: { batchId: string; onImported: () =>
       analyzed?: number;
       skipped?: { key: string }[];
       remembered?: { action: string; code: string; name: string }[];
+      asked?: unknown[];
     };
     if (!res.ok) return setErrors(data.errors ?? [`Import failed (${res.status}).`]);
     try {
@@ -201,6 +212,7 @@ function ImportBox({ batchId, onImported }: { batchId: string; onImported: () =>
     }
     const parts = [`${data.analyzed} meal${data.analyzed === 1 ? "" : "s"} analyzed`];
     if (data.skipped?.length) parts.push(`${data.skipped.length} skipped (they stay ready to analyze)`);
+    if (data.asked?.length) parts.push(`${data.asked.length} question${data.asked.length === 1 ? "" : "s"} remembered`);
     if (data.remembered?.length) parts.push(`memory: ${data.remembered.map((r) => `${r.action} ${r.code} ${r.name}`).join(", ")}`);
     showToast({ text: `Imported: ${parts.join("; ")}.` }, 10_000);
     mealsChanged();

@@ -198,3 +198,22 @@ the self-report only prefills the Model box. The user's confirmed name is what a
 record, and the raw self-report is kept separately in `batches.reply_model_reported`.
 That also lets the corpus measure how often models misreport themselves. The reply
 schema stays `bitebook.reply/1`, since the field is optional and older replies lack it.
+
+## D18 · 2026-10-18 · Models may ask, in the chat, before replying (prompt/4)
+
+The first real reply carried an open question ("chicken or paneer?") with nowhere for an
+answer to go. Re-analyzing a meal once a question is answered was rejected as needless
+machinery. Instead the model asks in the chat before writing its JSON, the user answers
+there, and the one reply already includes the answers.
+
+To keep this in line with principle 10, there are three limits:
+- **Only if necessary:** roughly 100 kcal or more at stake, or the answer matters for
+  future meals. Otherwise the model assumes and says so in the comment.
+- **At most two, asked together.** Skipping a question is fine, and the model then uses
+  its best guess.
+- **Never twice.** The reply lists what was asked and answered. The app stores that
+  (`questions`), and every later prompt includes it as "Questions already asked". The
+  user can delete one in Memory to let it be asked again.
+
+The format's sample question is a neutral placeholder, so it can't be mistaken for a
+real question that was already answered.
