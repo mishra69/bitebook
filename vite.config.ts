@@ -5,6 +5,8 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 
 // Set by scripts/deploy.sh; local builds are "dev".
 const VERSION = process.env.BITEBOOK_VERSION || "dev";
+// End-to-end tests (playwright.config.ts) get their own local database and no sign-in.
+const E2E = process.env.BITEBOOK_E2E === "1";
 
 const STATIC_SHELL = [
   "/",
@@ -36,5 +38,13 @@ function serviceWorker(): Plugin {
 
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(VERSION) },
-  plugins: [preact(), cloudflare(), serviceWorker()],
+  plugins: [
+    preact(),
+    cloudflare(
+      E2E
+        ? { persistState: { path: ".wrangler/e2e-state" }, config: { vars: { AUTH_DISABLED: "1" } } }
+        : {},
+    ),
+    serviceWorker(),
+  ],
 });

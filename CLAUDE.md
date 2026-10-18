@@ -35,6 +35,11 @@ Precedence when they disagree: **Core > code > Contract text > Plan text.**
 - `docs/decisions.md` is append-only. Never edit old entries. Add a new entry that
   supersedes the old one.
 
+## Tests
+
+Run `npm test` and `npm run test:e2e` before committing a change to behavior, and add or
+update tests with it. Don't test only through throwaway scripts.
+
 ## PWA skill
 
 The PWA layer follows the `pwa-cloudflare` skill (github.com/mishra69/pwa-cloudflare-skill),

@@ -20,7 +20,8 @@ src/shared/     types and helpers used by both (ULIDs, meal shapes, R2 key layou
 src/sw/sw.js    service worker template (the build stamps the version and file list)
 migrations/     D1 schema migrations
 public/         manifest, _headers, icons, install prompt
-scripts/        icon generator, spec freshness check
+scripts/        icon generator, spec freshness check, e2e server
+tests/          unit (Vitest) and e2e (Playwright) tests, with photo fixtures
 deploy.sh       stamp-deploy-verify (from the pwa-cloudflare skill), set up in deploy.conf
 wrangler.jsonc  Worker config: D1 (bitebook-db), R2 (bitebook-photos)
 ```
@@ -34,6 +35,17 @@ npm run migrate:local            # create the schema in the local D1
 npm run dev                      # local D1/R2 emulation, no cloud data touched
 npm run typecheck
 ```
+
+## Test
+
+```sh
+npm test            # unit tests (Vitest): EXIF, time, storage keys, prompt building
+npm run test:e2e    # end-to-end (Playwright) against a fresh local server on :4310
+```
+
+The end-to-end run starts its own server (`scripts/e2e-server.sh`), with an empty database
+in `.wrangler/e2e-state` and sign-in disabled. The Worker honours that only on localhost.
+Set `E2E_SERVER_LOG=1` to see the server's log.
 
 ## Deploy
 

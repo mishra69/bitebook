@@ -1,7 +1,16 @@
 // Reads DateTimeOriginal (+ OffsetTimeOriginal) from a JPEG's EXIF block. Returns null
 // for anything else (HEIC, PNG, no EXIF); the caller falls back to the capture time.
 export function exifTakenAt(buf: ArrayBuffer): { local: string; offset: string | null } | null {
-  const v = new DataView(buf);
+  // Malformed EXIF is common enough (edited or truncated files) that it must never cost
+  // the photo: any read past the end just means "no date here".
+  try {
+    return readJpeg(new DataView(buf));
+  } catch {
+    return null;
+  }
+}
+
+function readJpeg(v: DataView) {
   if (v.byteLength < 4 || v.getUint16(0) !== 0xffd8) return null;
   let p = 2;
   while (p + 4 <= v.byteLength) {

@@ -21,8 +21,9 @@ const allowed = (env: Bindings, email: string) =>
 const configured = (env: Bindings) => Boolean(env.GOOGLE_CLIENT_ID && env.SESSION_SECRET && env.ALLOWED_EMAILS);
 
 export const requireUser: MiddlewareHandler<AppEnv> = async (c, next) => {
-  if (c.env.AUTH_DISABLED === "1") {
-    // Local development only: a stand-in user, with a real row so foreign keys hold.
+  // Local development and tests only: a stand-in user, with a real row so foreign keys
+  // hold. Honoured only on localhost, so a dev or test build deployed by mistake stays shut.
+  if (c.env.AUTH_DISABLED === "1" && ["localhost", "127.0.0.1"].includes(new URL(c.req.url).hostname)) {
     await c.env.DB.prepare(
       `INSERT OR IGNORE INTO users (id, google_sub, email, created_at, last_login_at)
        VALUES ('dev-user', 'dev-user', 'dev@localhost', datetime('now'), datetime('now'))`,
