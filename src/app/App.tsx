@@ -1,4 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
+import { Analyze } from "./Analyze";
 import { Capture } from "./Capture";
 import { MealDetail } from "./MealDetail";
 import { MealList } from "./MealList";
@@ -100,7 +101,8 @@ export function App() {
         <>
           <nav class="tabs" aria-label="Sections">
             <a href="#/" aria-current={route.name === "today" ? "page" : undefined}>Today</a>
-            <a href="#/timeline" aria-current={route.name !== "today" ? "page" : undefined}>Timeline</a>
+            <a href="#/timeline" aria-current={route.name === "timeline" || route.name === "meal" ? "page" : undefined}>Timeline</a>
+            <a href="#/analyze" aria-current={route.name === "analyze" ? "page" : undefined}>Analyze</a>
           </nav>
           {route.name === "today" && (
             <>
@@ -109,6 +111,7 @@ export function App() {
             </>
           )}
           {route.name === "timeline" && <Timeline userId={user.id} />}
+          {route.name === "analyze" && <Analyze />}
           {route.name === "meal" && <MealDetail id={route.id} />}
         </>
       )}

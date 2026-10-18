@@ -1,7 +1,7 @@
 // Permanently removes meals deleted more than PURGE_AFTER_DAYS ago: their R2 files
 // and every row that belongs to them. Runs daily from the cron trigger in
 // wrangler.jsonc, across all users (it's an operator job, not a user request).
-// Tables added later that hang off a meal (analyses, corrections) must be purged here too.
+// Every table that hangs off a meal must be purged here too (analyses now; corrections later).
 export const PURGE_AFTER_DAYS = 30;
 const BATCH = 100;
 
@@ -28,6 +28,7 @@ export async function purgeDeleted(env: Env, now = Date.now()): Promise<number> 
     for (let i = 0; i < keys.length; i += 1000) await env.PHOTOS.delete(keys.slice(i, i + 1000));
 
     await env.DB.batch([
+      env.DB.prepare("DELETE FROM analyses WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
       env.DB.prepare("DELETE FROM photos WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
       env.DB.prepare("DELETE FROM meals WHERE id IN (SELECT value FROM json_each(?1))").bind(ids),
     ]);

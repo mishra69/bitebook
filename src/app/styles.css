@@ -144,3 +144,16 @@ ul { margin: 0; padding-left: 1.2rem; }
 .detail-photos { display: grid; gap: 0.5rem; margin: 0.75rem 0; }
 .detail-photos img { width: 100%; height: auto; border-radius: 10px; background: var(--card); }
 .timeline .thumb { width: 64px; height: 64px; }
+.batch h2 { font-size: 1.05rem; margin: 0; }
+.steps { padding-left: 1.2rem; display: grid; gap: 0.6rem; margin: 0.75rem 0; }
+.steps .button { margin-top: 0; }
+.thumb.keyed { width: 56px; height: 56px; }
+.thumb.keyed figcaption {
+  position: absolute; left: 4px; top: 4px; background: rgba(0, 0, 0, 0.65); color: #fff;
+  font-size: 0.75rem; font-weight: 700; padding: 0 0.35rem; border-radius: 4px;
+}
+.pick-row { display: flex; gap: 0.75rem; align-items: center; }
+.pick-row input { width: 1.4rem; height: 1.4rem; flex: none; }
+.prompt { white-space: pre-wrap; font-size: 0.75rem; background: var(--bg); padding: 0.75rem; border-radius: 8px; max-height: 50vh; overflow: auto; }
+.button:disabled { opacity: 0.5; }
+.analyze .card { margin-bottom: 1rem; }

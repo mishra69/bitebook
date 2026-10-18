@@ -71,3 +71,14 @@ export async function seedMeal(request: APIRequestContext, takenAt: string, note
   expect(r.status()).toBe(201);
   return meal;
 }
+
+// Runs SQL against the e2e server's local database (for state no UI creates yet).
+import { execFileSync } from "node:child_process";
+export function sql(query: string) {
+  const out = execFileSync(
+    "npx",
+    ["wrangler", "d1", "execute", "bitebook-db", "--local", "--persist-to", ".wrangler/e2e-state", "--json", "--command", query],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  );
+  return JSON.parse(out)[0].results as Record<string, unknown>[];
+}

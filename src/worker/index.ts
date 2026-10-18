@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { auth, requireUser, type User } from "./auth";
+import { batches } from "./batches";
 import { meals } from "./meals";
 import { purgeDeleted } from "./purge";
 
@@ -27,11 +28,17 @@ api.get("/health", async (c) => {
 });
 
 api.route("/", meals);
+api.route("/", batches);
 
 const app = new Hono<AppEnv>();
 app.route("/api", api);
 app.route("/auth", auth);
 app.notFound((c) => c.json({ error: "not_found" }, 404));
+// Unexpected errors: log the details (Workers Logs keeps them), answer without them.
+app.onError((err, c) => {
+  console.error(`${c.req.method} ${new URL(c.req.url).pathname}:`, err);
+  return c.json({ error: "internal" }, 500);
+});
 
 export default {
   fetch: app.fetch,

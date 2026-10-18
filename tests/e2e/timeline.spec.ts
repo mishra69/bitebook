@@ -28,7 +28,7 @@ test("timeline groups by day, pages back, opens a meal, and deletes with undo", 
   await page.locator(".toast").getByRole("button", { name: "Undo" }).click();
   await expect(page.locator(".meal", { hasText: "seed 0" })).toHaveCount(1);
   await page.getByRole("button", { name: "Recently deleted" }).click();
-  await expect(page.getByText("Nothing deleted in the last 30 days.")).toBeVisible();
+  await expect(page.locator(".meals.deleted")).not.toContainText("2026-10-10 19:00");
 });
 
 test("a deleted meal can be restored from Recently deleted", async ({ page, request }) => {

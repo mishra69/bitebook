@@ -122,7 +122,7 @@ meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
   return c.json({ meal });
 });
 
-async function attachPhotos(db: D1Database, userId: string, rows: Omit<Meal, "photos">[]): Promise<Meal[]> {
+export async function attachPhotos(db: D1Database, userId: string, rows: Omit<Meal, "photos">[]): Promise<Meal[]> {
   if (rows.length === 0) return [];
   const { results: photos } = await db
     .prepare(

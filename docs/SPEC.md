@@ -112,7 +112,8 @@ rows and files for good.
 > **Tier:** Contract · **Verified:** 2026-10-18 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
-> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003).
+> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
+> `batches`, `analyses`, `foods` and `notes` (0006).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -140,55 +141,13 @@ All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC off
 --    deleted more than 30 days ago, with their photos (and, once they exist, their
 --    analyses and corrections).
 
-CREATE TABLE foods (                 -- remembered foods, maintained by model replies
-  id              TEXT PRIMARY KEY,
-  user_id         TEXT NOT NULL REFERENCES users(id),
-  code            TEXT NOT NULL,     -- 'F1', 'F2', … per user, never reused
-  name            TEXT NOT NULL,     -- 'Mission whole wheat tortilla', 'usual dal tadka'
-  serving         TEXT NOT NULL,     -- '1 tortilla (45 g)', '1 bowl'
-  kcal            REAL, protein_g REAL, carbs_g REAL, fat_g REAL,  -- per serving, rough
-  status          TEXT NOT NULL,     -- 'active' | 'retired'
-  source_batch_id TEXT REFERENCES batches(id),   -- the reply that last added or changed it
-  created_at      TEXT NOT NULL,
-  updated_at      TEXT NOT NULL,
-  retired_at      TEXT,
-  UNIQUE (user_id, code)
-);
-
-CREATE TABLE notes (                 -- the user's notes; the prompt includes all of them
-  id          TEXT PRIMARY KEY,
-  user_id     TEXT NOT NULL REFERENCES users(id),
-  body        TEXT NOT NULL,
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
-);
-
-CREATE TABLE batches (
-  id              TEXT PRIMARY KEY,
-  user_id         TEXT NOT NULL REFERENCES users(id),
-  created_at      TEXT NOT NULL,
-  prompt_version  TEXT NOT NULL,     -- e.g. 'prompt/1'
-  prompt_text     TEXT NOT NULL,     -- exactly what was sent
-  key_map         TEXT NOT NULL,     -- JSON: {"A": "<meal_id>", ...}
-  channel         TEXT NOT NULL DEFAULT 'chat',  -- 'chat' | 'api'
-  status          TEXT NOT NULL,     -- 'open' | 'imported' | 'abandoned'
-  reply_raw       TEXT,              -- exactly what was pasted back
-  reply_model     TEXT,              -- user-selected, e.g. 'claude-opus-5-5'
-  summary         TEXT,              -- JSON: reply.summary
-  imported_at     TEXT
-);
-
-CREATE TABLE analyses (
-  id              TEXT PRIMARY KEY,
-  user_id         TEXT NOT NULL REFERENCES users(id),
-  meal_id         TEXT NOT NULL REFERENCES meals(id),
-  batch_id        TEXT NOT NULL REFERENCES batches(id),
-  model           TEXT NOT NULL,
-  prompt_version  TEXT NOT NULL,
-  schema_version  TEXT NOT NULL,     -- e.g. 'bitebook.reply/1'
-  payload         TEXT NOT NULL,     -- JSON: that meal's object from the reply
-  created_at      TEXT NOT NULL
-);
+-- batches, analyses, foods, notes: see migrations/0006_batches_analyses_memory.sql.
+--  * analyses.skipped is a column, not just a payload field, so "pending" is a plain
+--    query: no non-skipped analysis, and not in an open batch's key_map.
+--  * batches.active_codes records which remembered-food codes the prompt listed, so
+--    import can reject a reply that cites a code the model was never shown.
+--  * foods are updated in place (they're memory, not history); the reply that changed
+--    one is kept verbatim in its batch.
 
 CREATE TABLE corrections (
   id           TEXT PRIMARY KEY,
@@ -229,46 +188,19 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 
 ### Prompt (`prompt/1`)
 
-The app renders the prompt as plain text. The images are attached alongside it and named
-`<key>-<n>_<YYYY-MM-DD>_<HHMM>.jpg` (for example `B-2_2026-10-16_1932.jpg`), so each one is
-self-describing even if the attachment order gets shuffled.
+Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
+trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
+code can't say:
 
-```
-You are helping me keep an approximate food log from photos. Rough, consistent
-estimates are the goal; precision isn't. Batch: {batch_id}
-
-## What you know about me (from my app)
-Notes: {notes, or "—"}
-
-Remembered foods (codes stay the same across batches):
-[F1] Mission whole wheat tortilla · 1 tortilla (45 g) · 130 kcal · P4 C22 F3.5
-{… or "—"}
-
-Last 30 days, one line per analyzed meal, newest first:
-Oct 16 Thu 19:30 dinner · dal tadka with 2 rotis · ~550 kcal · P20 C75 F18
-{… or "—"}
-
-Last 7 days: {n} days logged · avg {kcal} kcal/day · protein {p} g/day
-
-## New meals (times are my local time)
-[A] Fri 2026-10-17 19:32 · dinner · photos: A-1_2026-10-17_1932.jpg, A-2_2026-10-17_1932.jpg
-Note: {note, or "—"}
-{…}
-
-## What to do
-1. For each meal: describe it in a few words and estimate kcal, protein, carbs and fat
-   for what was eaten. If a nutrition label or package is visible, use it. When you
-   recognize a remembered food, use its values and list its code in foods_used. Stay
-   consistent with how similar meals in the last 30 days were estimated. If a photo is
-   unusable, mark the meal skipped and say why.
-2. Changes to what I should remember: add a food when you read a label or see the same
-   dish recurring in the last 30 days; update one whose values look off; retire one I
-   seem to have stopped eating. Only list changes. Most batches need none.
-3. Two or three sentences on this batch, with one practical suggestion.
-
-Reply with ONLY one JSON code block in exactly this format, with no other text:
-{the reply example below}
-```
+- Photos are attached separately and named `<key>-<n>_<YYYY-MM-DD>_<HHMM>.jpg`, so each one
+  is self-describing even if a chat app reorders attachments.
+- The prompt opens by asking for *rough, consistent* estimates (principle 10), and asks
+  the model to stay consistent with how similar meals in the digest were estimated.
+  That's what turns the digest into continuity.
+- The digest holds the last 30 days, newest first, capped at 150 lines (about 4k tokens).
+  The trend is computed by the app, never by the model.
+- A batch is capped at 20 photos (`MAX_PHOTOS_PER_BATCH`), a common per-message
+  attachment limit in chat apps.
 
 ### Reply (`bitebook.reply/1`)
 
@@ -408,9 +340,8 @@ in-batch or analyzed on timeline rows, and analyses and corrections on the detai
 
 > **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
 
-*Steps 1–3 are built. The remaining on-device checks for capture are in §7.*
+*Steps 1–4 are built. The remaining on-device checks for capture are in §7.*
 
-4. Export: batch creation, the prompt with its context block, and the share/copy handoff.
 5. Import: validation and storage, applying remembered-food changes; the Memory screen.
 6. Corrections.
 7. The roll-off script.
@@ -418,13 +349,11 @@ in-batch or analyzed on timeline rows, and analyses and corrections on the detai
 
 ## 12. Open questions
 
-> **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2026-12-17
 
-- **Handoff mechanics.** The browser clipboard can't hold several images plus text at
-  once. The leading option is the Web Share API (`navigator.share({ files, text })`),
-  which sends the images and prompt to the Claude app through the iOS share sheet, with
-  "copy prompt" as a separate button in case the share target drops the text. Fallbacks
-  are a downloadable zip, or a contact-sheet image with the keys drawn on it. We need to
-  test which one the Claude app accepts, and how many images fit in one message.
+- **Handoff to the Claude app.** Built as two buttons: "Copy prompt", then "Share photos"
+  through the iOS share sheet (Download on browsers that can't share files). To check on
+  the iPhone: does the Claude app appear in the share sheet for several images, do they
+  arrive in one message, and does the 20-photo cap match its real limit?
 - **Meal grouping.** Should photos taken within N minutes of each other merge into one
   meal automatically, or is it always manual?
