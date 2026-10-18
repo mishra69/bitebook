@@ -37,6 +37,11 @@ model analyses and the user's corrections.
    signed-in user, so opening it up later is a config change, not a migration (see D9).
    There are no sharing features. The operator can see all stored data. That is stated
    to users, not engineered around.
+9. **The app holds the memory, not the chat.** Every prompt carries the context the model
+   needs: the pantry, the user's standing notes and the recent trend. So any model, in a
+   fresh chat or through the API, sees the same memory, and each batch's stored prompt
+   records exactly what context an analysis was based on. Models only *propose* changes
+   to memory (a new pantry item from a label); the user confirms them (see D13).
 
 ## 2. Architecture
 
@@ -60,7 +65,9 @@ Laptop
 **Capture.** Tap "New meal" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
 and queues both copies. The upload sends the original and the display copy. The meal is
-"pending analysis".
+"pending analysis". A capture can instead be marked a **label**: a photo of a nutrition
+label or package. It travels in the next batch like a meal, but asks the model to read the
+label rather than estimate a plate.
 
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
@@ -70,7 +77,15 @@ into Import, with the model filled in automatically.
 
 **Import.** Paste the reply and select which model produced it. The app validates the reply against
 the batch (section 6) and, if it is valid, stores one analysis per meal and marks the batch as
-"imported". If it is invalid, nothing is stored and the errors are shown.
+"imported". If it is invalid, nothing is stored and the errors are shown. Each label read
+in the reply becomes a **proposed** pantry food, waiting for the user's confirmation.
+
+**Pantry and notes.** The pantry lists foods in use, with nutrition per serving taken from
+their labels. The user confirms or edits proposed foods, and marks a food finished when it
+runs out; only active foods go into prompts, each with a short code (`F1`, `F2`, …) that the
+model cites when it sees that food. Standing notes are free text the user writes once
+(goals, household recipes, usual portions) and edits whenever. Both, plus a trend the app
+computes from stored analyses, form the context block of every prompt.
 
 **Correct.** On any meal, the user can fix items, portions or totals. Each correction is
 stored as a new row that references the analysis it corrects.
@@ -87,7 +102,7 @@ rows and files for good.
 
 ## 4. Data model (D1)
 
-> **Tier:** Contract · **Verified:** 2026-10-17 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-18 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003).
@@ -116,6 +131,33 @@ All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC off
 --    are never hard-deleted. D12 replaced that: src/worker/purge.ts removes meals
 --    deleted more than 30 days ago, with their photos (and, once they exist, their
 --    analyses and corrections).
+
+-- meals gain: kind TEXT NOT NULL DEFAULT 'meal' CHECK (kind IN ('meal','label'))
+
+CREATE TABLE foods (                 -- the pantry
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id),
+  code          TEXT NOT NULL,       -- 'F1', 'F2', … per user, never reused
+  name          TEXT NOT NULL,       -- 'Mission whole wheat tortilla'
+  serving_desc  TEXT NOT NULL,       -- '1 tortilla'
+  serving_g     REAL,
+  kcal          REAL, protein_g REAL, carbs_g REAL, fat_g REAL, fiber_g REAL,  -- per serving
+  status        TEXT NOT NULL,       -- 'proposed' | 'active' | 'finished' | 'rejected'
+  source_meal_id     TEXT REFERENCES meals(id),     -- the label capture it came from
+  source_analysis_id TEXT REFERENCES analyses(id),
+  created_at    TEXT NOT NULL,
+  activated_at  TEXT,
+  finished_at   TEXT,
+  UNIQUE (user_id, code)
+);
+
+CREATE TABLE notes (                 -- standing notes; the prompt includes all of them
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id),
+  body        TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
 
 CREATE TABLE batches (
   id              TEXT PRIMARY KEY,
@@ -176,7 +218,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 
 ## 6. Prompt and reply contract
 
-> **Tier:** Contract · **Verified:** 2026-10-17 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-18 · **Expires:** 2027-04-17
 >
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
@@ -193,14 +235,29 @@ You are analyzing my meal log. Batch: {batch_id}
 Each meal below has a key, and its photos are attached with filenames starting
 with that key. Times are my local time.
 
-{for each meal}
-[{key}] {weekday} {YYYY-MM-DD} {HH:MM} · {meal_type or "meal"} · photos: {filenames}
+## Context (from my app; treat it as reliable)
+Standing notes:
+{each note, or "—"}
+Pantry — foods I'm currently using, with values from their labels. When you see one,
+use these values and cite its code:
+[F1] Mission whole wheat tortilla — 1 tortilla (45 g): 130 kcal · P 4 g · C 22 g · F 3.5 g · fiber 4 g
+{… or "—"}
+Recent trend (computed by the app from past analyses): last 7 days, {n} meals,
+avg {kcal} kcal/day · protein {p} g/day. Last batch summary: {text or "—"}
+
+## Entries
+{for each entry}
+[{key}] {weekday} {YYYY-MM-DD} {HH:MM} · {meal_type or "meal" | "LABEL"} · photos: {filenames}
 Note: {note or "—"}
 {end}
 
-For each meal, identify the foods, estimate portions, and estimate nutrition.
-Use my notes when they clarify something the photo can't show (e.g. "half eaten",
-"oil-free"). If a photo is unusable, mark that meal skipped and say why.
+For each meal, identify the foods, estimate portions, and estimate nutrition. Use pantry
+values for pantry foods and set food_code. Use my notes when they clarify something the
+photo can't show (e.g. "half eaten", "oil-free"). If a photo is unusable, mark that entry
+skipped and say why.
+
+For each LABEL entry, read the nutrition label instead: name, serving and per-serving
+values exactly as printed. Don't estimate a plate for it.
 
 Then write a short summary across the whole batch: patterns, anything notable,
 and one or two practical suggestions.
@@ -221,13 +278,27 @@ Reply with ONLY one JSON code block matching this schema, with no other text:
       "skipped": false,
       "skip_reason": null,
       "items": [
-        { "name": "dal tadka", "portion": "1 bowl", "grams": 250,
-          "kcal": 280, "protein_g": 14, "carbs_g": 36, "fat_g": 9, "fiber_g": 8 }
+        { "name": "dal tadka", "portion": "1 bowl", "grams": 250, "food_code": null,
+          "kcal": 280, "protein_g": 14, "carbs_g": 36, "fat_g": 9, "fiber_g": 8 },
+        { "name": "tortilla", "portion": "2 tortillas", "grams": 90, "food_code": "F1",
+          "kcal": 260, "protein_g": 8, "carbs_g": 44, "fat_g": 7, "fiber_g": 8 }
       ],
       "totals": { "kcal": 280, "protein_g": 14, "carbs_g": 36, "fat_g": 9, "fiber_g": 8 },
       "confidence": "medium",
       "observations": "Looks like ~1 tsp ghee on top.",
       "questions": ["Was the rice white or brown?"]
+    },
+    {
+      "key": "B",
+      "skipped": false,
+      "skip_reason": null,
+      "label": {
+        "name": "Mission whole wheat tortilla", "serving_desc": "1 tortilla", "serving_g": 45,
+        "kcal": 130, "protein_g": 4, "carbs_g": 22, "fat_g": 3.5, "fiber_g": 4
+      },
+      "confidence": "high",
+      "observations": "Values per tortilla, as printed.",
+      "questions": []
     }
   ],
   "summary": {
@@ -250,6 +321,9 @@ The import is all-or-nothing. If any check fails, nothing is stored.
 - The set of `meals[].key` values must be **exactly** the batch's keys: none missing, none
   extra, no duplicates.
 - Numbers must be ≥ 0 or null. `confidence` must be one of low, medium or high.
+- A meal entry has `items` and `totals`. A LABEL entry has `label` instead. Each label
+  becomes a `proposed` food, and nothing enters prompts until the user confirms it.
+- `food_code`, when set, must be one of the active codes listed in this batch's prompt.
 - Totals that differ from the sum of the items by more than 10% produce a warning, not an error.
 - Skipped meals are stored as analyses with `skipped: true` but **remain pending**, so
   they show up in the next export.
@@ -331,25 +405,28 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 ## 10. Screens
 
-> **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
 
 1. **Capture** (the home screen): a big camera button, the queue status, and today's meals.
+   The draft has a Meal / Label switch.
 2. **Timeline:** meals by day, with thumbnails and a badge for pending, in-batch or analyzed.
 3. **Meal detail:** the photos, note, every analysis (by model and date), and corrections.
-4. **Export:** select meals, then share or copy, or use "Run via API" when a key is
+4. **Pantry and notes:** proposed foods to confirm or edit, active foods (mark finished),
+   finished ones; the standing notes.
+5. **Export:** select meals, then share or copy, or use "Run via API" when a key is
    configured. The batch is created at this step.
-5. **Import:** pick the open batch, paste the reply, pick the model, then validate and save.
-6. **Settings:** storage usage, the default model name, and abandoning stale open batches.
+6. **Import:** pick the open batch, paste the reply, pick the model, then validate and save.
+7. **Settings:** storage usage, the default model name, and abandoning stale open batches.
 
 ## 11. Build order
 
-> **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
 
 2. Capture → queue → upload, verified on the iPhone. *Built and deployed. The on-device
    checks are in §7.*
-3. Timeline and meal detail.
-4. Export: batch creation, the prompt, and the share/copy handoff.
-5. Import: validation and storage.
+3. Timeline and meal detail, plus the Meal / Label switch at capture.
+4. Export: batch creation, the prompt with its context block, and the share/copy handoff.
+5. Import: validation and storage, including proposed foods; the pantry and notes screen.
 6. Corrections.
 7. The roll-off script.
 8. The API path (optional; it reuses everything from steps 4–5).

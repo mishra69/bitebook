@@ -124,3 +124,21 @@ first, so a failed run leaves rows behind and the next day's run retries. A meal
 in the phone's outbox is deleted locally, after a confirmation, since there is no server
 copy to restore from. A 30-day window was chosen over immediate deletion because
 accidental deletes become costly once meals carry analyses.
+
+## D13 · 2026-10-18 · Continuity lives in the app, not in a chat thread
+
+Each batch is analyzed in isolation, so something learned once (a tortilla's nutrition
+label) is gone by the next batch. Reusing one long chat thread was rejected: long
+threads get lossy, they tie the corpus to one model, and they leave no record of what
+context an analysis saw.
+
+Instead, every prompt starts with a context block that the app builds:
+- the **pantry**: confirmed foods with label values and stable codes (`F1`, …);
+- the user's **standing notes**;
+- a **trend** the app computes itself from stored analyses.
+
+Labels are captured like meals but marked as labels. The model reads them, and its
+reading becomes a proposed pantry food that the user confirms. The model never changes
+memory directly. This adds principle 9, a `kind` on meals, the `foods` and `notes`
+tables, and context, label and `food_code` parts to the prompt and reply contract. That
+contract isn't implemented yet, so it was edited in place and stays at version 1.
