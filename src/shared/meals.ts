@@ -33,6 +33,16 @@ export type Meal = {
   photos: { id: string; position: number; width: number | null; height: number | null }[];
 };
 
+export type DeletedMeal = {
+  id: string;
+  taken_at: string;
+  meal_type: MealType | null;
+  note: string | null;
+  deleted_at: string;
+  purge_at: string; // when the daily purge removes it for good
+  cover_photo_id: string | null;
+};
+
 // R2 keys (docs/SPEC.md §5). The month comes from the meal's local taken_at.
 export function photoKey(userId: string, kind: "original" | "display", photoId: string, takenAt: string, mime: string) {
   const month = takenAt.slice(0, 4) + "/" + takenAt.slice(5, 7);

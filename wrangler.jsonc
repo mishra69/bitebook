@@ -24,5 +24,7 @@
     "GOOGLE_CLIENT_ID": "234363181677-1qh9dpevvkr6mtghofllcs8o3gm4pjbi.apps.googleusercontent.com",
     "ALLOWED_EMAILS": "mishabhi@gmail.com"
   },
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // Daily purge of meals deleted more than 30 days ago (src/worker/purge.ts).
+  "triggers": { "crons": ["17 3 * * *"] }
 }

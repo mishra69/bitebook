@@ -121,3 +121,16 @@ ul { margin: 0; padding-left: 1.2rem; }
 .bottom-bar .primary.big { min-height: 3.5rem; font-size: 1.1rem; }
 .bottom-bar .secondary { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1px var(--muted); }
 .bottom-bar button:disabled { opacity: 0.6; }
+.push { margin-left: auto; }
+.small { font-size: 0.8rem; }
+.thumb.small { width: 44px; height: 44px; }
+.meals.deleted { margin-top: 0.5rem; }
+/* Sits just above the bottom bar. */
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 20;
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  display: flex; gap: 1rem; align-items: center;
+  background: var(--fg); color: var(--bg); padding: 0.6rem 1rem; border-radius: 10px;
+  max-width: calc(100% - 2rem);
+}
+.toast .link { color: var(--bg); font-weight: 600; }

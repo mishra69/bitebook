@@ -109,3 +109,18 @@ settle, which blocked every later upload until a relaunch. In response:
 
 The same meal showed that iOS hands the app JPEG, not HEIC, and that Safari ignores
 `canvas.toBlob`'s quality argument. Display copies are now encoded with `toDataURL`.
+
+## D12 · 2026-10-18 · Meals can be deleted (refines principle 5)
+
+The first real upload was a test photo, not a meal, and there was no way to remove it.
+"History is append-only" was meant to stop silent rewrites of what a model said about a
+meal, not to keep mistakes forever. So the principle now reads: within a meal, history
+is append-only, but a whole meal can be deleted on purpose.
+
+Deleting sets `deleted_at`, which hides the meal everywhere at once. Undo is offered
+right away, and a "Recently deleted" list keeps the meal restorable for 30 days. A daily
+cron trigger (`src/worker/purge.ts`) then removes its R2 files and its rows. Files go
+first, so a failed run leaves rows behind and the next day's run retries. A meal still
+in the phone's outbox is deleted locally, after a confirmation, since there is no server
+copy to restore from. A 30-day window was chosen over immediate deletion because
+accidental deletes become costly once meals carry analyses.

@@ -8,7 +8,7 @@ built, and **Plan** sections expire.
 
 ## 1. Purpose and principles
 
-> **Tier:** Core · **Verified:** 2026-10-17
+> **Tier:** Core · **Verified:** 2026-10-18
 
 Bitebook logs a photo of every meal with as little friction as possible, so that the
 logging actually happens. It also builds a durable, reusable corpus of meal photos with
@@ -23,8 +23,10 @@ model analyses and the user's corrections.
    the replies. An optional API path can run the same batch directly (see D6). Both paths
    share one batch, prompt and reply contract, and go through the same validator. The
    API path is a different way to deliver the batch, not a separate feature.
-5. **History is append-only.** Analyses and corrections are never overwritten. Each
-   analysis records the model, the prompt version and the date (see D5).
+5. **Within a meal, history is append-only.** Analyses and corrections are never edited
+   or removed. Each analysis records the model, the prompt version and the date (see D5).
+   A whole meal can be deleted deliberately. It is restorable for 30 days, then purged
+   with its photos and analyses (see D12).
 6. **The corpus stays portable.** Everything can be exported as plain files (JPEG and JSON)
    without Bitebook running.
 7. **It runs on the free tier.** It stays within Cloudflare's free limits for one user.
@@ -53,7 +55,7 @@ Laptop
 
 ## 3. Core flows
 
-> **Tier:** Core · **Verified:** 2026-10-17
+> **Tier:** Core · **Verified:** 2026-10-18
 
 **Capture.** Tap "New meal" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
@@ -75,6 +77,11 @@ stored as a new row that references the analysis it corrects.
 
 **Re-analyze.** Meals that have already been analyzed can be exported again in a new batch,
 for example to compare models. This adds analyses and never replaces them.
+
+**Delete.** A meal that hasn't uploaded yet is removed from the phone, after a
+confirmation. A saved meal disappears from the app and from exports at once, with an
+Undo, and stays in "Recently deleted" for 30 days. After that a daily job removes its
+rows and files for good.
 
 **Roll-off.** See section 8.
 
@@ -105,6 +112,10 @@ All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC off
 --    don't sort correctly as text, which matters once you travel.
 --  * A meal row is written only after every file is confirmed in R2 with the
 --    expected size and SHA-256, so a meal never points at a missing photo.
+--  * deleted_at marks a deletion the user can still undo. 0003's comment says rows
+--    are never hard-deleted. D12 replaced that: src/worker/purge.ts removes meals
+--    deleted more than 30 days ago, with their photos (and, once they exist, their
+--    analyses and corrections).
 
 CREATE TABLE batches (
   id              TEXT PRIMARY KEY,

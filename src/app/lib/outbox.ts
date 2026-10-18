@@ -64,6 +64,7 @@ const all = async (userId: string) =>
   ((await tx("readonly", (s) => s.getAll())) as OutboxMeal[]).filter((m) => m.userId === userId);
 export const listMeals = async (userId: string) =>
   (await all(userId)).filter((m) => !m.draft).sort((a, b) => b.takenAt.localeCompare(a.takenAt));
+const getMeal = async (id: string) => (await tx("readonly", (s) => s.get(id))) as OutboxMeal | undefined;
 export const getDraft = async (userId: string) => (await all(userId)).find((m) => m.draft) ?? null;
 
 // ── Sync ────────────────────────────────────────────────────────────────────
@@ -96,6 +97,19 @@ let currentUser: string | null = null;
 class Offline extends Error {}
 class SignedOut extends Error {}
 class Rejected extends Error {}
+class Removed extends Error {} // the user deleted the meal while it was uploading
+
+let uploadingId: string | null = null;
+
+// Deletes a meal that hasn't reached the server yet, stopping its upload if one is running.
+export async function removeFromOutbox(id: string) {
+  await deleteMeal(id);
+  if (uploadingId === id) inflight?.abort();
+}
+
+async function ensureQueued(id: string) {
+  if (!(await getMeal(id))) throw new Removed("removed");
+}
 
 export function startSync(userId: string) {
   currentUser = userId;
@@ -130,11 +144,16 @@ export function sync(): Promise<void> {
       for (const meal of await listMeals(currentUser!)) {
         if (meal.error) continue;
         try {
+          uploadingId = meal.id;
           await uploadMeal(meal);
           await deleteMeal(meal.id);
         } catch (e) {
+          // Deleted mid-upload (its request was aborted): move on to the next meal.
+          if (e instanceof Removed || !(await getMeal(meal.id))) continue;
           if (!(e instanceof Rejected)) throw e;
           await putMeal({ ...meal, error: e.message });
+        } finally {
+          uploadingId = null;
         }
       }
       retryIndex = 0;
@@ -181,6 +200,7 @@ async function uploadMeal(meal: OutboxMeal) {
       p.uploaded[kind] = true;
       sent += blob.size;
       changed({ progress: { sent, total } });
+      await ensureQueued(meal.id); // don't resurrect a meal deleted mid-upload
       await putMeal(meal); // remember progress, so a retry skips finished files
     }
   }
@@ -202,6 +222,7 @@ async function uploadMeal(meal: OutboxMeal) {
       height: p.height,
     })),
   };
+  await ensureQueued(meal.id);
   try {
     await request("/api/meals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   } catch (e) {

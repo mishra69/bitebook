@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { auth, requireUser, type User } from "./auth";
 import { meals } from "./meals";
+import { purgeDeleted } from "./purge";
 
 export type AppEnv = {
   Bindings: Env & { AUTH_DISABLED?: string; SESSION_SECRET?: string };
@@ -32,4 +33,9 @@ app.route("/api", api);
 app.route("/auth", auth);
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 
-export default app satisfies ExportedHandler<Env>;
+export default {
+  fetch: app.fetch,
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(purgeDeleted(env));
+  },
+} satisfies ExportedHandler<Env>;

@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { isUlid } from "../shared/ulid";
-import { MEAL_TYPES, photoKey, type Meal, type NewMeal } from "../shared/meals";
+import { MEAL_TYPES, photoKey, type DeletedMeal, type Meal, type NewMeal } from "../shared/meals";
+import { PURGE_AFTER_DAYS } from "./purge";
 
 // Uploads happen in two steps so a flaky connection never leaves a half-saved meal:
 // each photo's two files are PUT on their own (retryable, idempotent), then the meal
@@ -110,6 +111,50 @@ meals.get("/meals", async (c) => {
   const byMeal = new Map<string, Meal["photos"]>();
   for (const { meal_id, ...p } of photos) byMeal.set(meal_id, [...(byMeal.get(meal_id) ?? []), p]);
   return c.json({ meals: rows.map((r) => ({ ...r, photos: byMeal.get(r.id) ?? [] })) satisfies Meal[] });
+});
+
+// DELETE /api/meals/:id — hides the meal everywhere at once. It can be restored for
+// PURGE_AFTER_DAYS; after that the daily purge removes its rows and files for good.
+meals.delete("/meals/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  if (!isUlid(id)) return c.json({ error: "not_found" }, 404);
+  const row = await c.env.DB.prepare("SELECT deleted_at FROM meals WHERE id = ?1 AND user_id = ?2")
+    .bind(id, user.id)
+    .first<{ deleted_at: string | null }>();
+  if (!row) return c.json({ error: "not_found" }, 404);
+  if (!row.deleted_at) {
+    await c.env.DB.prepare("UPDATE meals SET deleted_at = ?3 WHERE id = ?1 AND user_id = ?2")
+      .bind(id, user.id, new Date().toISOString())
+      .run();
+  }
+  return c.json({ ok: true });
+});
+
+// POST /api/meals/:id/restore — undoes a delete that hasn't been purged yet.
+meals.post("/meals/:id/restore", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  if (!isUlid(id)) return c.json({ error: "not_found" }, 404);
+  const res = await c.env.DB.prepare("UPDATE meals SET deleted_at = NULL WHERE id = ?1 AND user_id = ?2")
+    .bind(id, user.id)
+    .run();
+  return res.meta.changes ? c.json({ ok: true }) : c.json({ error: "not_found" }, 404);
+});
+
+// GET /api/meals/deleted — deleted meals that can still be restored, newest first.
+meals.get("/meals/deleted", async (c) => {
+  const user = c.get("user");
+  const { results } = await c.env.DB.prepare(
+    `SELECT m.id, m.taken_at, m.meal_type, m.note, m.deleted_at,
+            (SELECT p.id FROM photos p WHERE p.meal_id = m.id AND p.user_id = ?1 ORDER BY p.position LIMIT 1) AS cover_photo_id
+     FROM meals m WHERE m.user_id = ?1 AND m.deleted_at IS NOT NULL
+     ORDER BY m.deleted_at DESC LIMIT 200`,
+  )
+    .bind(user.id)
+    .all<Omit<DeletedMeal, "purge_at">>();
+  const purgeAt = (d: string) => new Date(Date.parse(d) + PURGE_AFTER_DAYS * 86_400_000).toISOString();
+  return c.json({ meals: results.map((m) => ({ ...m, purge_at: purgeAt(m.deleted_at) })) satisfies DeletedMeal[] });
 });
 
 // GET /api/photos/:id/display — the display copy, for thumbnails and meal detail.
