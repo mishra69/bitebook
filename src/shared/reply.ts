@@ -34,6 +34,7 @@ export type RememberChange = {
 export type Reply = {
   schema: string;
   batch_id: string;
+  model: string | null; // the model's own claim about itself (prompt/3); may be wrong
   meals: MealResult[];
   remember: RememberChange[];
   summary: { text: string; suggestion: string | null };
@@ -68,6 +69,13 @@ export function extractJson(text: string): unknown {
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : null);
+
+// The reply's "model" field, if it's a usable name. Never an error: it's a hint.
+export function selfReportedModel(raw: unknown): string | null {
+  if (!isObj(raw) || typeof raw.model !== "string") return null;
+  const m = raw.model.trim();
+  return m && m.length <= 80 && !m.startsWith("<") ? m : null; // "<…>" is the template echoed back
+}
 
 export function validateReply(raw: unknown, batch: BatchFacts): { reply: Reply | null; errors: string[] } {
   const errors: string[] = [];
@@ -164,6 +172,7 @@ export function validateReply(raw: unknown, batch: BatchFacts): { reply: Reply |
   const reply: Reply = {
     schema: REPLY_SCHEMA,
     batch_id: batch.id,
+    model: selfReportedModel(raw),
     meals,
     remember,
     summary: { text: str(summary.text) ?? "", suggestion: str(summary.suggestion) },

@@ -186,7 +186,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/2`)
+### Prompt (`prompt/3`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -214,8 +214,11 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
 - Validation is strict about structure (exactly the batch's keys, codes the prompt
   actually listed) and forgiving about form: chatter or a ```` ```json ```` fence around
   the JSON, and numbers written as strings ("400").
-- The model name is typed by the user (prefilled with the last one). A chat app doesn't
-  say which model answered, so this is the user's best knowledge, not a guarantee.
+- The reply names the model that wrote it, as far as it knows (`prompt/3`). Pasting fills
+  the Model box from that, and the user confirms or corrects it. Both are stored: the
+  confirmed name on every analysis (`batches.reply_model`, `analyses.model`), and the raw
+  self-report in `batches.reply_model_reported`. Models misname themselves often enough
+  that the self-report is never the record on its own (D17).
 - A skipped meal gets an analysis row with `skipped = 1` and stays ready to analyze.
 
 ## 7. Capture: what still needs an iPhone

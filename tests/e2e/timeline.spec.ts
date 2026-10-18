@@ -38,7 +38,10 @@ test("a deleted meal can be restored from Recently deleted", async ({ page, requ
   await expect(page.locator(".meal", { hasText: "to restore" })).toHaveCount(0);
   await page.getByRole("button", { name: "Recently deleted" }).click();
   await page.locator(".meals.deleted .meal", { hasText: "2026-09-30" }).getByRole("button", { name: "Restore" }).click();
-  await expect(page.locator(".meal", { hasText: "to restore" })).toHaveCount(1);
+  await expect(page.locator(".toast")).toContainText("Meal restored.");
+  // Other specs add newer meals, so it may sit past the first page: check it directly.
+  await expect.poll(async () => (await request.get(`/api/meals/${id}`)).status()).toBe(200);
+  await expect(page.locator(".meals.deleted .meal", { hasText: "2026-09-30" })).toHaveCount(0);
 });
 
 test("an unknown meal shows a not-found message", async ({ page }) => {

@@ -127,3 +127,28 @@ test("remembered foods and notes carry into the next batch's prompt, and can be 
   prompt = (await (await request.post("/api/batches", { data: { meal_ids: [c] } })).json()).batch.prompt;
   expect(prompt).not.toContain("usual lassi shake ·");
 });
+
+test("the reply's own model name fills the Model box, and both it and the confirmed name are kept", async ({ page, request }) => {
+  await clearPending(request);
+  const a = await seedMeal(request, "2026-10-13T13:00:00-05:00", "model A");
+  const b = await seedMeal(request, "2026-10-13T19:00:00-05:00", "model B");
+  const batchId = (await (await request.post("/api/batches", { data: { meal_ids: [a, b] } })).json()).batch.id;
+
+  await openApp(page, "#/analyze");
+  const card = page.locator(".batch");
+  const modelBox = card.getByPlaceholder(/Claude/);
+  await card.locator("textarea").fill(JSON.stringify(replyFor(batchId, (r) => (r.model = "claude-opus-5-5"))));
+  await expect(modelBox).toHaveValue("claude-opus-5-5");
+  await expect(card.getByText("Filled in from the reply")).toBeVisible();
+
+  // The user knows better (say, the app showed a different model): their name wins.
+  await modelBox.fill("Claude Opus 5.5 (Claude app)");
+  await card.getByRole("button", { name: "Import reply" }).click();
+  await expect(page.locator(".toast")).toContainText("Imported: 2 meals analyzed");
+
+  const done = (await (await request.get("/api/batches?status=imported")).json()).batches.find((x: { id: string }) => x.id === batchId);
+  expect(done.reply_model).toBe("Claude Opus 5.5 (Claude app)");
+  expect(done.reply_model_reported).toBe("claude-opus-5-5");
+  const meal = (await (await request.get(`/api/meals/${a}`)).json()).meal;
+  expect(meal.analyses[0].model).toBe("Claude Opus 5.5 (Claude app)");
+});

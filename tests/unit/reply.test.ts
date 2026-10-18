@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { extractJson, validateReply } from "../../src/shared/reply";
+import { extractJson, selfReportedModel, validateReply } from "../../src/shared/reply";
 
 const real = readFileSync(new URL("../fixtures/replies/real-2026-10-18.txt", import.meta.url), "utf8");
 const batch = { id: "01M584AT8TRFY6EM4EW4ZZ2N9S", keys: ["A", "B"], activeCodes: [] as string[] };
@@ -57,5 +57,19 @@ describe("validateReply", () => {
     expect(parse(edit((r) => (r.meals[0].foods_used = ["F2"]))).errors[0]).toContain("cites F2");
     const withF1 = validateReply(JSON.parse(edit((r) => { r.meals[0].foods_used = ["F1"]; r.remember.push({ ...add, action: "update", code: "F1" }); })), { ...batch, activeCodes: ["F1"] });
     expect(withF1.errors).toEqual([]);
+  });
+});
+
+describe("selfReportedModel (prompt/3)", () => {
+  it("reads the model's claim about itself, and ignores unusable values", () => {
+    expect(selfReportedModel({ model: "  claude-opus-5-5  " })).toBe("claude-opus-5-5");
+    expect(selfReportedModel({ model: null })).toBeNull();
+    expect(selfReportedModel({})).toBeNull(); // the first real reply predates prompt/3
+    expect(selfReportedModel({ model: "<your model name and version, as you know it, or null>" })).toBeNull(); // template echoed back
+    expect(selfReportedModel({ model: "x".repeat(81) })).toBeNull();
+  });
+  it("is carried on the validated reply", () => {
+    expect(parse(edit((r) => (r.model = "claude-opus-5-5"))).reply!.model).toBe("claude-opus-5-5");
+    expect(parse(real).reply!.model).toBeNull();
   });
 });

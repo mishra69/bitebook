@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { Meal } from "../shared/meals";
+import { extractJson, selfReportedModel } from "../shared/reply";
 import { mealLabel } from "./MealRow";
 import { mealsChanged, onMealsChanged, showToast } from "./lib/notify";
 import { timeOfDay } from "./lib/time";
@@ -156,6 +157,23 @@ const lastModel = () => {
 function ImportBox({ batchId, onImported }: { batchId: string; onImported: () => void }) {
   const [text, setText] = useState("");
   const [model, setModel] = useState(lastModel);
+  const [fromReply, setFromReply] = useState(false); // the model box was filled from the reply
+
+  // The reply names its own model (prompt/3). Use that as the suggestion, unless the user
+  // has typed their own; it's a model's claim about itself, so it stays editable.
+  const onPaste = (value: string) => {
+    setText(value);
+    let reported: string | null = null;
+    try {
+      reported = selfReportedModel(extractJson(value));
+    } catch {
+      /* not JSON yet: nothing to read */
+    }
+    if (reported && (fromReply || !model.trim() || model === lastModel())) {
+      setModel(reported);
+      setFromReply(true);
+    }
+  };
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -196,7 +214,7 @@ function ImportBox({ batchId, onImported }: { batchId: string; onImported: () =>
         rows={5}
         placeholder="Paste the chat app's whole reply here"
         value={text}
-        onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+        onInput={(e) => onPaste((e.target as HTMLTextAreaElement).value)}
       />
       <label class="model">
         Model{" "}
@@ -204,9 +222,13 @@ function ImportBox({ batchId, onImported }: { batchId: string; onImported: () =>
           list="models"
           value={model}
           placeholder="e.g. Claude Opus (Claude app)"
-          onInput={(e) => setModel((e.target as HTMLInputElement).value)}
+          onInput={(e) => {
+            setModel((e.target as HTMLInputElement).value);
+            setFromReply(false);
+          }}
         />
       </label>
+      {fromReply && <p class="muted small">Filled in from the reply. Models sometimes get their own name wrong, so check it.</p>}
       <datalist id="models">
         <option value="Claude Opus (Claude app)" />
         <option value="Claude Sonnet (Claude app)" />

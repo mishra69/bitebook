@@ -188,3 +188,13 @@ Bitebook notes. Batches created earlier keep `prompt/1`, which is stored with th
 Import is one D1 transaction (analyses, remembered-food changes, closing the batch) and
 reports every validation error at once. The handoff stays as two taps (copy the prompt,
 share the photos). The user found that fine, since it's not a back-and-forth.
+
+## D17 · 2026-10-18 · The reply names its own model; the user confirms it
+
+Typing the model name on every import is tedious, so `prompt/3` asks the model to put
+its own name and version in the reply. A model's knowledge of itself is unreliable,
+though: it may give an older name, only a family name, or a confident wrong version. So
+the self-report only prefills the Model box. The user's confirmed name is what analyses
+record, and the raw self-report is kept separately in `batches.reply_model_reported`.
+That also lets the corpus measure how often models misreport themselves. The reply
+schema stays `bitebook.reply/1`, since the field is optional and older replies lack it.

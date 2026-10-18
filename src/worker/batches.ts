@@ -24,6 +24,7 @@ export type BatchView = {
   status: "open" | "imported" | "abandoned";
   prompt: string;
   reply_model: string | null;
+  reply_model_reported: string | null;
   imported_at: string | null;
   summary: { text: string; suggestion: string | null } | null;
   entries: { key: string; meal: Meal; files: { photo_id: string; name: string }[] }[];
@@ -184,9 +185,10 @@ batches.post("/batches/:id/import", async (c) => {
   }
   stmts.push(
     c.env.DB.prepare(
-      `UPDATE batches SET status = 'imported', reply_raw = ?3, reply_model = ?4, summary = ?5, imported_at = ?6
+      `UPDATE batches SET status = 'imported', reply_raw = ?3, reply_model = ?4, summary = ?5, imported_at = ?6,
+         reply_model_reported = ?7
        WHERE id = ?1 AND user_id = ?2`,
-    ).bind(batch.id, user.id, body.reply, model, JSON.stringify(reply.summary), now),
+    ).bind(batch.id, user.id, body.reply, model, JSON.stringify(reply.summary), now, reply.model),
   );
   await c.env.DB.batch(stmts); // one transaction: all of it lands, or none of it
 
@@ -211,11 +213,21 @@ batches.post("/batches/:id/abandon", async (c) => {
 async function viewBatches(db: D1Database, userId: string, where: string, arg: string): Promise<BatchView[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, created_at, status, prompt_text, key_map, reply_model, imported_at, summary FROM batches
+      `SELECT id, created_at, status, prompt_text, key_map, reply_model, reply_model_reported, imported_at, summary FROM batches
        WHERE user_id = ?1 AND ${where} ORDER BY created_at DESC LIMIT 50`,
     )
     .bind(userId, arg)
-    .all<{ id: string; created_at: string; status: BatchView["status"]; prompt_text: string; key_map: string; reply_model: string | null; imported_at: string | null; summary: string | null }>();
+    .all<{
+      id: string;
+      created_at: string;
+      status: BatchView["status"];
+      prompt_text: string;
+      key_map: string;
+      reply_model: string | null;
+      reply_model_reported: string | null;
+      imported_at: string | null;
+      summary: string | null;
+    }>();
   const out: BatchView[] = [];
   for (const b of results) {
     const keyMap = JSON.parse(b.key_map) as Record<string, string>;
@@ -230,6 +242,7 @@ async function viewBatches(db: D1Database, userId: string, where: string, arg: s
       status: b.status,
       prompt: b.prompt_text,
       reply_model: b.reply_model,
+      reply_model_reported: b.reply_model_reported,
       imported_at: b.imported_at,
       summary: b.summary ? JSON.parse(b.summary) : null,
       entries: Object.entries(keyMap)

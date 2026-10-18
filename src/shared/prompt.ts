@@ -4,7 +4,8 @@
 import type { MealType } from "./meals";
 
 // prompt/2 (2026-10-18): suggestions point to Bitebook notes, since a model can't save them.
-export const PROMPT_VERSION = "prompt/2";
+// prompt/3 (2026-10-18): the reply names the model that wrote it, as far as it knows (D17).
+export const PROMPT_VERSION = "prompt/3";
 export const REPLY_SCHEMA = "bitebook.reply/1";
 export const DIGEST_DAYS = 30;
 export const DIGEST_MAX_LINES = 150;
@@ -83,6 +84,7 @@ export function computeTrend(entries: DigestEntry[], now: number): Trend {
 export const REPLY_EXAMPLE = {
   schema: REPLY_SCHEMA,
   batch_id: "<the batch id above>",
+  model: "<your model name and version, as you know it, or null>",
   meals: [
     {
       key: "A",
@@ -171,6 +173,7 @@ ${meals}
    portion), suggest I add it to my notes in Bitebook: you can't save notes yourself,
    and every future batch sees them.
 
+Set "model" to your own model name and version as you know it, or null if you don't know.
 Every meal key above must appear exactly once in "meals". Reply with ONLY one JSON code
 block in exactly this format, with no other text:
 \`\`\`json
