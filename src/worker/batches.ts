@@ -12,6 +12,7 @@ import {
   type DigestEntry,
   type RememberedFood,
 } from "../shared/prompt";
+import { extractJson, validateReply } from "../shared/reply";
 import { isUlid, ulid } from "../shared/ulid";
 
 // Most chat apps take up to 20 attachments in one message. Verify on the phone (SPEC §12).
@@ -22,6 +23,9 @@ export type BatchView = {
   created_at: string;
   status: "open" | "imported" | "abandoned";
   prompt: string;
+  reply_model: string | null;
+  imported_at: string | null;
+  summary: { text: string; suggestion: string | null } | null;
   entries: { key: string; meal: Meal; files: { photo_id: string; name: string }[] }[];
 };
 
@@ -99,6 +103,102 @@ batches.get("/batches", async (c) => {
   return c.json({ batches: await viewBatches(c.env.DB, user.id, "status = ?2", status) });
 });
 
+// POST /api/batches/:id/import {reply, model} — the pasted reply, validated all-or-nothing
+// (SPEC §6). Stores one analysis per meal, applies remembered-food changes, closes the batch.
+batches.post("/batches/:id/import", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{ reply?: unknown; model?: unknown }>().catch(() => ({}) as { reply?: unknown; model?: unknown });
+  const model = typeof body.model === "string" ? body.model.trim() : "";
+  if (typeof body.reply !== "string" || !body.reply.trim()) return c.json({ errors: ["Paste the reply first."] }, 422);
+  if (!model || model.length > 80) return c.json({ errors: ["Say which model wrote the reply."] }, 422);
+
+  const batch = await c.env.DB.prepare(
+    "SELECT id, status, prompt_version, key_map, active_codes FROM batches WHERE id = ?1 AND user_id = ?2",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first<{ id: string; status: string; prompt_version: string; key_map: string; active_codes: string }>();
+  if (!batch) return c.json({ errors: ["This batch doesn't exist."] }, 404);
+  if (batch.status !== "open") return c.json({ errors: [`This batch is already ${batch.status}.`] }, 409);
+  const keyMap = JSON.parse(batch.key_map) as Record<string, string>;
+
+  let raw: unknown;
+  try {
+    raw = extractJson(body.reply);
+  } catch (e) {
+    return c.json({ errors: [(e as Error).message] }, 422);
+  }
+  const { reply, errors } = validateReply(raw, { id: batch.id, keys: Object.keys(keyMap), activeCodes: JSON.parse(batch.active_codes) });
+  if (!reply) return c.json({ errors }, 422);
+
+  // A meal purged since batching has no row to hang an analysis on; skip just that one.
+  const { results: existing } = await c.env.DB.prepare(
+    "SELECT id FROM meals WHERE user_id = ?1 AND id IN (SELECT value FROM json_each(?2))",
+  )
+    .bind(user.id, JSON.stringify(Object.values(keyMap)))
+    .all<{ id: string }>();
+  const present = new Set(existing.map((m) => m.id));
+
+  const now = new Date().toISOString();
+  const stmts: D1PreparedStatement[] = [];
+  for (const m of reply.meals) {
+    const mealId = keyMap[m.key];
+    if (!present.has(mealId)) continue;
+    stmts.push(
+      c.env.DB.prepare(
+        `INSERT INTO analyses (id, user_id, meal_id, batch_id, model, prompt_version, schema_version, skipped, payload, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+      ).bind(ulid(), user.id, mealId, batch.id, model, batch.prompt_version, reply.schema, m.skipped ? 1 : 0, JSON.stringify(m), now),
+    );
+  }
+  const maxCode = await c.env.DB.prepare("SELECT MAX(CAST(substr(code, 2) AS INTEGER)) AS n FROM foods WHERE user_id = ?1")
+    .bind(user.id)
+    .first<{ n: number | null }>();
+  let next = (maxCode?.n ?? 0) + 1;
+  const remembered: { action: string; code: string; name: string }[] = [];
+  for (const r of reply.remember) {
+    if (r.action === "add") {
+      const code = `F${next++}`;
+      remembered.push({ action: "add", code, name: r.name });
+      stmts.push(
+        c.env.DB.prepare(
+          `INSERT INTO foods (id, user_id, code, name, serving, kcal, protein_g, carbs_g, fat_g, source_batch_id, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)`,
+        ).bind(ulid(), user.id, code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, batch.id, now),
+      );
+    } else if (r.action === "update") {
+      remembered.push({ action: "update", code: r.code!, name: r.name });
+      stmts.push(
+        c.env.DB.prepare(
+          `UPDATE foods SET name = ?3, serving = ?4, kcal = ?5, protein_g = ?6, carbs_g = ?7, fat_g = ?8,
+             source_batch_id = ?9, updated_at = ?10 WHERE user_id = ?1 AND code = ?2`,
+        ).bind(user.id, r.code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, batch.id, now),
+      );
+    } else {
+      remembered.push({ action: "retire", code: r.code!, name: r.name });
+      stmts.push(
+        c.env.DB.prepare(
+          "UPDATE foods SET status = 'retired', retired_at = ?3, source_batch_id = ?4, updated_at = ?3 WHERE user_id = ?1 AND code = ?2",
+        ).bind(user.id, r.code, now, batch.id),
+      );
+    }
+  }
+  stmts.push(
+    c.env.DB.prepare(
+      `UPDATE batches SET status = 'imported', reply_raw = ?3, reply_model = ?4, summary = ?5, imported_at = ?6
+       WHERE id = ?1 AND user_id = ?2`,
+    ).bind(batch.id, user.id, body.reply, model, JSON.stringify(reply.summary), now),
+  );
+  await c.env.DB.batch(stmts); // one transaction: all of it lands, or none of it
+
+  return c.json({
+    ok: true,
+    analyzed: reply.meals.filter((m) => !m.skipped).length,
+    skipped: reply.meals.filter((m) => m.skipped).map((m) => ({ key: m.key, reason: m.skip_reason })),
+    remembered,
+    summary: reply.summary,
+  });
+});
+
 // POST /api/batches/:id/abandon — gives up on an open batch; its meals become pending again.
 batches.post("/batches/:id/abandon", async (c) => {
   const user = c.get("user");
@@ -110,9 +210,12 @@ batches.post("/batches/:id/abandon", async (c) => {
 
 async function viewBatches(db: D1Database, userId: string, where: string, arg: string): Promise<BatchView[]> {
   const { results } = await db
-    .prepare(`SELECT id, created_at, status, prompt_text, key_map FROM batches WHERE user_id = ?1 AND ${where} ORDER BY created_at DESC LIMIT 50`)
+    .prepare(
+      `SELECT id, created_at, status, prompt_text, key_map, reply_model, imported_at, summary FROM batches
+       WHERE user_id = ?1 AND ${where} ORDER BY created_at DESC LIMIT 50`,
+    )
     .bind(userId, arg)
-    .all<{ id: string; created_at: string; status: BatchView["status"]; prompt_text: string; key_map: string }>();
+    .all<{ id: string; created_at: string; status: BatchView["status"]; prompt_text: string; key_map: string; reply_model: string | null; imported_at: string | null; summary: string | null }>();
   const out: BatchView[] = [];
   for (const b of results) {
     const keyMap = JSON.parse(b.key_map) as Record<string, string>;
@@ -126,6 +229,9 @@ async function viewBatches(db: D1Database, userId: string, where: string, arg: s
       created_at: b.created_at,
       status: b.status,
       prompt: b.prompt_text,
+      reply_model: b.reply_model,
+      imported_at: b.imported_at,
+      summary: b.summary ? JSON.parse(b.summary) : null,
       entries: Object.entries(keyMap)
         .filter(([, mealId]) => meals.has(mealId)) // a meal deleted after batching drops out
         .map(([key, mealId]) => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import type { Meal } from "../shared/meals";
+import type { Analysis, Meal } from "../shared/meals";
 import { mealLabel } from "./MealRow";
 import { deleteSavedMeal } from "./lib/mealsApi";
 import { timeOfDay } from "./lib/time";
@@ -45,10 +45,36 @@ export function MealDetail({ id }: { id: string }) {
       </div>
       {meal.note && <p class="meal-note">{meal.note}</p>}
       <h3 class="section-title">Analysis</h3>
-      <p class="muted">Not analyzed yet.</p>
+      {meal.analyses?.length ? meal.analyses.map((a) => <AnalysisCard key={a.id} a={a} />) : <p class="muted">Not analyzed yet.</p>}
       <button class="button secondary danger" onClick={remove}>
         Delete meal
       </button>
     </article>
+  );
+}
+
+// One model's reading of the meal. Every analysis is kept (principle 5), newest first.
+function AnalysisCard({ a }: { a: Analysis }) {
+  const n = (v: number | null) => (v === null ? "?" : Math.round(v));
+  const when = new Date(a.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return (
+    <div class="card analysis">
+      {a.skipped ? (
+        <p>Skipped: {a.skip_reason ?? "no reason given"}</p>
+      ) : (
+        <>
+          <p class="analysis-desc">{a.description}</p>
+          <p class="macros">
+            <strong>~{n(a.kcal)} kcal</strong> · protein {n(a.protein_g)} g · carbs {n(a.carbs_g)} g · fat {n(a.fat_g)} g
+          </p>
+          {a.comment && <p class="muted small">{a.comment}</p>}
+        </>
+      )}
+      <p class="muted small">
+        {a.model} · {when}
+        {a.confidence && ` · ${a.confidence} confidence`}
+        {a.foods_used.length > 0 && ` · used ${a.foods_used.join(", ")}`}
+      </p>
+    </div>
   );
 }

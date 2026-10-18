@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { auth, requireUser, type User } from "./auth";
 import { batches } from "./batches";
 import { meals } from "./meals";
+import { memory } from "./memory";
 import { purgeDeleted } from "./purge";
 
 export type AppEnv = {
@@ -29,6 +30,7 @@ api.get("/health", async (c) => {
 
 api.route("/", meals);
 api.route("/", batches);
+api.route("/", memory);
 
 const app = new Hono<AppEnv>();
 app.route("/api", api);

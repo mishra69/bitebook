@@ -31,6 +31,24 @@ export type Meal = {
   meal_type: MealType | null;
   note: string | null;
   photos: { id: string; position: number; width: number | null; height: number | null }[];
+  analysis?: Analysis | null; // the latest non-skipped one, in lists
+  analyses?: Analysis[]; // every one, newest first, on the detail screen
+};
+
+export type Analysis = {
+  id: string;
+  created_at: string;
+  model: string;
+  skipped: boolean;
+  skip_reason: string | null;
+  description: string;
+  kcal: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  confidence: "low" | "medium" | "high" | null;
+  comment: string | null;
+  foods_used: string[];
 };
 
 export type DeletedMeal = {

@@ -176,3 +176,15 @@ consistent beats precise and abandoned.
 - **No monthly review prompt.** With the digest in every batch it would only add a
   narrative, at the cost of a second prompt type and reply format. App-computed trends
   cover long horizons, and a "copy digest" button can serve one-off questions later.
+
+## D16 · 2026-10-18 · Import, built against the first real reply
+
+The first real reply, from the Claude app on 2026-10-18 for two meals, followed the
+format exactly, and it's kept as a test fixture. It also asked to be told a recurring
+recipe "once" so it could remember it. A model can't save that, but the user's notes can,
+and every batch sees them. So `prompt/2` adds one line: suggest adding such things to
+Bitebook notes. Batches created earlier keep `prompt/1`, which is stored with them.
+
+Import is one D1 transaction (analyses, remembered-food changes, closing the batch) and
+reports every validation error at once. The handoff stays as two taps (copy the prompt,
+share the photos). The user found that fine, since it's not a back-and-forth.

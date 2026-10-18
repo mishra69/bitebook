@@ -49,6 +49,7 @@ describe("buildPrompt", () => {
     expect(p).toContain("[A] Fri 2026-10-16 19:32 · dinner · photos: A-1_2026-10-16_1932.jpg, A-2_2026-10-16_1932.jpg\nNote: —");
     expect(p).toContain('"schema": "bitebook.reply/1"');
     expect(p).toContain('"batch_id": "01BATCH"');
+    expect(p).toContain("suggest I add it to my notes in Bitebook");
   });
   it("includes notes, remembered foods, the digest (capped) and the trend", () => {
     const digest = Array.from({ length: 200 }, (_, i) => entry(`2026-10-${String(1 + (i % 15)).padStart(2, "0")}T12:00:00-05:00`, 500, 20));

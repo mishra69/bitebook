@@ -186,7 +186,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/1`)
+### Prompt (`prompt/2`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -202,52 +202,21 @@ code can't say:
 - A batch is capped at 20 photos (`MAX_PHOTOS_PER_BATCH`), a common per-message
   attachment limit in chat apps.
 
-### Reply (`bitebook.reply/1`)
+### Reply (`bitebook.reply/1`) and import
 
-```json
-{
-  "schema": "bitebook.reply/1",
-  "batch_id": "01JA...",
-  "meals": [
-    {
-      "key": "A",
-      "skipped": false,
-      "skip_reason": null,
-      "description": "dal tadka with 2 tortillas",
-      "kcal": 540, "protein_g": 22, "carbs_g": 70, "fat_g": 16,
-      "confidence": "medium",
-      "foods_used": ["F1"],
-      "comment": "Looks like about 1 tsp ghee on the dal."
-    }
-  ],
-  "remember": [
-    { "action": "add", "code": null, "name": "usual dal tadka", "serving": "1 bowl",
-      "kcal": 280, "protein_g": 14, "carbs_g": 36, "fat_g": 9,
-      "reason": "Same dish in 6 of the last 30 days." }
-  ],
-  "summary": { "text": "…", "suggestion": "…" }
-}
-```
+Implemented in `src/shared/reply.ts` (parsing and validation) and the import route in
+`src/worker/batches.ts`, which are authoritative. `tests/unit/reply.test.ts` runs them
+against the first real reply (`tests/fixtures/replies/`). What the code can't say:
 
-`action` is `add` (with `code: null`; the app assigns the next code), `update` (with an
-existing code and the new values) or `retire` (with an existing code; values are ignored).
-
-### Import validation
-
-This applies to both paths. An API reply is treated exactly like a pasted one.
-
-The import is all-or-nothing. If any check fails, nothing is stored.
-
-- The pasted text may be wrapped in a ```` ```json ```` fence or have extra text around it. Extract
-  the first JSON object.
-- `schema` must be a version the app knows. `batch_id` must match an **open** batch.
-- The set of `meals[].key` values must be **exactly** the batch's keys: none missing, none
-  extra, no duplicates.
-- Numbers must be ≥ 0 or null. `confidence` must be one of low, medium or high.
-- `foods_used` codes and `update`/`retire` codes must be remembered foods that were
-  active when the batch was created.
-- Skipped meals are stored as analyses with `skipped: true` but **remain pending**, so
-  they show up in the next export.
+- Import is all-or-nothing: the analyses, the remembered-food changes and closing the
+  batch go to D1 as one transaction. Any validation error stores nothing, and every error
+  is shown at once, so one paste-and-fix round is enough.
+- Validation is strict about structure (exactly the batch's keys, codes the prompt
+  actually listed) and forgiving about form: chatter or a ```` ```json ```` fence around
+  the JSON, and numbers written as strings ("400").
+- The model name is typed by the user (prefilled with the last one). A chat app doesn't
+  say which model answered, so this is the user's best knowledge, not a guarantee.
+- A skipped meal gets an analysis row with `skipped = 1` and stays ready to analyze.
 
 ## 7. Capture: what still needs an iPhone
 
@@ -327,22 +296,18 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 > **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
 
-Built: Today (capture), Timeline and Meal detail (`src/app/`). Still to come: badges for
-in-batch or analyzed on timeline rows, and analyses and corrections on the detail screen.
+Built (`src/app/`): Today (capture), Timeline, Meal detail with its analyses, Analyze
+(export and import) and Memory. Still to come: corrections on the detail screen, "Run via
+API" on a batch, and:
 
-4. **Memory:** the notes (editable) and the remembered foods (each can be retired).
-5. **Export:** select meals, then share or copy, or use "Run via API" when a key is
-   configured. The batch is created at this step.
-6. **Import:** pick the open batch, paste the reply, pick the model, then validate and save.
-7. **Settings:** storage usage, the default model name, and abandoning stale open batches.
+- **Settings:** storage usage, the default model name, and abandoning stale open batches.
 
 ## 11. Build order
 
 > **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
 
-*Steps 1–4 are built. The remaining on-device checks for capture are in §7.*
+*Steps 1–5 are built. The remaining on-device checks for capture are in §7.*
 
-5. Import: validation and storage, applying remembered-food changes; the Memory screen.
 6. Corrections.
 7. The roll-off script.
 8. The API path (optional; it reuses everything from steps 4–5).

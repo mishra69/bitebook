@@ -51,6 +51,12 @@ export function MealRow({ row }: { row: Row }) {
           <img key={u} class="thumb" src={u} alt="" loading="lazy" />
         ))}
       </div>
+      {row.kind === "server" && row.meal.analysis && (
+        <p class="meal-analysis">
+          {row.meal.analysis.description} · <strong>~{Math.round(row.meal.analysis.kcal ?? 0)} kcal</strong>
+          {row.meal.analysis.protein_g !== null && ` · P${Math.round(row.meal.analysis.protein_g)}`}
+        </p>
+      )}
       {row.meal.note && <p class="meal-note">{row.meal.note}</p>}
     </>
   );

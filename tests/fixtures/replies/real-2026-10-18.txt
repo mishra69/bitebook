@@ -1,0 +1,37 @@
+{
+  "schema": "bitebook.reply/1",
+  "batch_id": "01M584AT8TRFY6EM4EW4ZZ2N9S",
+  "meals": [
+    {
+      "key": "A",
+      "skipped": false,
+      "skip_reason": null,
+      "description": "tomato-cream curry with chicken or paneer cubes, no rice",
+      "kcal": 400,
+      "protein_g": 25,
+      "carbs_g": 18,
+      "fat_g": 25,
+      "confidence": "low",
+      "foods_used": [],
+      "comment": "About 1.5 cups of a tikka/makhani-style gravy. The white cubes could be chicken or paneer. Paneer would add about 80 kcal and 6 g fat. No rice or bread was in the bowl."
+    },
+    {
+      "key": "B",
+      "skipped": false,
+      "skip_reason": null,
+      "description": "banana mango lassi protein shake (~16 oz)",
+      "kcal": 460,
+      "protein_g": 32,
+      "carbs_g": 65,
+      "fat_g": 8,
+      "confidence": "medium",
+      "foods_used": [],
+      "comment": "Assumed yogurt and milk, 1 banana, about half a cup of mango and 1 scoop of protein powder. Full-fat yogurt or added sugar or honey would push it higher."
+    }
+  ],
+  "remember": [],
+  "summary": {
+    "text": "This is a solid start to the log, with about 860 kcal and 57 g protein across these two meals. The shake carries most of the carbs, and the curry carries most of the fat, which likely comes from cream or butter in the gravy.",
+    "suggestion": "If you make the lassi shake often, tell me the exact recipe (yogurt type, protein powder brand and scoop count) once. I can save it as a remembered food so future estimates are precise and consistent."
+  }
+}

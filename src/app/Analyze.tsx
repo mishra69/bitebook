@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { Meal } from "../shared/meals";
 import { mealLabel } from "./MealRow";
-import { onMealsChanged, showToast } from "./lib/notify";
+import { mealsChanged, onMealsChanged, showToast } from "./lib/notify";
 import { timeOfDay } from "./lib/time";
 
 type BatchView = {
@@ -9,25 +9,31 @@ type BatchView = {
   created_at: string;
   status: string;
   prompt: string;
+  reply_model: string | null;
+  imported_at: string | null;
+  summary: { text: string; suggestion: string | null } | null;
   entries: { key: string; meal: Meal; files: { photo_id: string; name: string }[] }[];
 };
 
-// Export (SPEC §3): pick pending meals, freeze them into a batch, then hand the prompt and
-// photos to a chat app. Importing the reply comes with step 5.
+// Export and import (SPEC §3): pick pending meals, freeze them into a batch, hand the prompt
+// and photos to a chat app, then paste its reply back.
 export function Analyze() {
   const [pending, setPending] = useState<Meal[] | null>(null);
   const [maxPhotos, setMaxPhotos] = useState(20);
   const [open, setOpen] = useState<BatchView[]>([]);
+  const [last, setLast] = useState<BatchView | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     try {
-      const [p, b] = await Promise.all([
+      const [p, b, done] = await Promise.all([
         fetch("/api/batches/pending-meals").then((r) => (r.ok ? r.json() : Promise.reject())),
         fetch("/api/batches?status=open").then((r) => (r.ok ? r.json() : Promise.reject())),
+        fetch("/api/batches?status=imported").then((r) => (r.ok ? r.json() : Promise.reject())),
       ]);
+      setLast((done as { batches: BatchView[] }).batches[0] ?? null);
       const meals = (p as { meals: Meal[]; max_photos: number }).meals;
       setMaxPhotos((p as { max_photos: number }).max_photos);
       setPending(meals);
@@ -90,8 +96,9 @@ export function Analyze() {
     <section class="analyze" aria-label="Analyze">
       {error && <p class="bad">{error}</p>}
       {open.map((b) => (
-        <BatchCard key={b.id} batch={b} onAbandon={() => abandon(b.id)} />
+        <BatchCard key={b.id} batch={b} onAbandon={() => abandon(b.id)} onImported={load} />
       ))}
+      {last?.summary && open.length === 0 && <LastSummary batch={last} />}
       <h2 class="section-title">Ready to analyze</h2>
       {pending.length === 0 ? (
         <p class="muted">{open.length ? "Every saved meal is in a batch." : "No meals waiting. New meals show up here once they're saved."}</p>
@@ -122,7 +129,103 @@ export function Analyze() {
   );
 }
 
-function BatchCard({ batch, onAbandon }: { batch: BatchView; onAbandon: () => void }) {
+function LastSummary({ batch }: { batch: BatchView }) {
+  const when = new Date(batch.imported_at ?? batch.created_at);
+  return (
+    <article class="card summary" aria-label="Last batch">
+      <h2>Last batch · {batch.entries.length} meal{batch.entries.length === 1 ? "" : "s"}</h2>
+      <p class="muted small">
+        {batch.reply_model} · {when.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+      </p>
+      <p>{batch.summary!.text}</p>
+      {batch.summary!.suggestion && <p class="suggestion">💡 {batch.summary!.suggestion}</p>}
+    </article>
+  );
+}
+
+const MODEL_KEY = "bitebook.model";
+const lastModel = () => {
+  try {
+    return localStorage.getItem(MODEL_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+
+// Step 3: paste the reply back. The server validates it all-or-nothing and says what's wrong.
+function ImportBox({ batchId, onImported }: { batchId: string; onImported: () => void }) {
+  const [text, setText] = useState("");
+  const [model, setModel] = useState(lastModel);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    setErrors([]);
+    const res = await fetch(`/api/batches/${batchId}/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reply: text, model }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res) return setErrors(["Couldn't reach the server. Are you online?"]);
+    const data = (await res.json().catch(() => ({}))) as {
+      errors?: string[];
+      analyzed?: number;
+      skipped?: { key: string }[];
+      remembered?: { action: string; code: string; name: string }[];
+    };
+    if (!res.ok) return setErrors(data.errors ?? [`Import failed (${res.status}).`]);
+    try {
+      localStorage.setItem(MODEL_KEY, model.trim());
+    } catch {
+      /* fine: we just won't prefill next time */
+    }
+    const parts = [`${data.analyzed} meal${data.analyzed === 1 ? "" : "s"} analyzed`];
+    if (data.skipped?.length) parts.push(`${data.skipped.length} skipped (they stay ready to analyze)`);
+    if (data.remembered?.length) parts.push(`memory: ${data.remembered.map((r) => `${r.action} ${r.code} ${r.name}`).join(", ")}`);
+    showToast({ text: `Imported: ${parts.join("; ")}.` }, 10_000);
+    mealsChanged();
+    onImported();
+  };
+
+  return (
+    <div class="import">
+      <textarea
+        class="note"
+        rows={5}
+        placeholder="Paste the chat app's whole reply here"
+        value={text}
+        onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+      />
+      <label class="model">
+        Model{" "}
+        <input
+          list="models"
+          value={model}
+          placeholder="e.g. Claude Opus (Claude app)"
+          onInput={(e) => setModel((e.target as HTMLInputElement).value)}
+        />
+      </label>
+      <datalist id="models">
+        <option value="Claude Opus (Claude app)" />
+        <option value="Claude Sonnet (Claude app)" />
+      </datalist>
+      <button class="button" disabled={busy || !text.trim() || !model.trim()} onClick={submit}>
+        {busy ? "Importing…" : "Import reply"}
+      </button>
+      {errors.length > 0 && (
+        <ul class="errors bad small">
+          {errors.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function BatchCard({ batch, onAbandon, onImported }: { batch: BatchView; onAbandon: () => void; onImported: () => void }) {
   const [files, setFiles] = useState<File[] | null>(null);
   const [copied, setCopied] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -191,7 +294,10 @@ function BatchCard({ batch, onAbandon }: { batch: BatchView; onAbandon: () => vo
           </button>
           <span class="muted small"> to your chat app (e.g. Claude), then paste the prompt with them.</span>
         </li>
-        <li class="muted small">Pasting the reply back into Bitebook comes next (import isn't built yet).</li>
+        <li>
+          Paste the reply:
+          <ImportBox batchId={batch.id} onImported={onImported} />
+        </li>
       </ol>
       <div class="thumbs">
         {batch.entries.map((e) => (

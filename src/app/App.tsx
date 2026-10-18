@@ -3,6 +3,7 @@ import { Analyze } from "./Analyze";
 import { Capture } from "./Capture";
 import { MealDetail } from "./MealDetail";
 import { MealList } from "./MealList";
+import { Memory } from "./Memory";
 import { GoogleSignIn } from "./SignIn";
 import { Timeline } from "./Timeline";
 import { ToastHost } from "./Toast";
@@ -103,6 +104,7 @@ export function App() {
             <a href="#/" aria-current={route.name === "today" ? "page" : undefined}>Today</a>
             <a href="#/timeline" aria-current={route.name === "timeline" || route.name === "meal" ? "page" : undefined}>Timeline</a>
             <a href="#/analyze" aria-current={route.name === "analyze" ? "page" : undefined}>Analyze</a>
+            <a href="#/memory" aria-current={route.name === "memory" ? "page" : undefined}>Memory</a>
           </nav>
           {route.name === "today" && (
             <>
@@ -112,6 +114,7 @@ export function App() {
           )}
           {route.name === "timeline" && <Timeline userId={user.id} />}
           {route.name === "analyze" && <Analyze />}
+          {route.name === "memory" && <Memory />}
           {route.name === "meal" && <MealDetail id={route.id} />}
         </>
       )}

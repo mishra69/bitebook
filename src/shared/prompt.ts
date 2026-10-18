@@ -3,7 +3,8 @@
 // stored batch records the version its prompt was built with.
 import type { MealType } from "./meals";
 
-export const PROMPT_VERSION = "prompt/1";
+// prompt/2 (2026-10-18): suggestions point to Bitebook notes, since a model can't save them.
+export const PROMPT_VERSION = "prompt/2";
 export const REPLY_SCHEMA = "bitebook.reply/1";
 export const DIGEST_DAYS = 30;
 export const DIGEST_MAX_LINES = 150;
@@ -165,7 +166,10 @@ ${meals}
    dish recurring in the last ${DIGEST_DAYS} days; update one whose values look off; retire one I
    seem to have stopped eating. "add" has code null; "update" and "retire" use an
    existing code. Only list changes. Most batches need none, so remember is often [].
-3. Two or three sentences on this batch, with one practical suggestion.
+3. Two or three sentences on this batch, with one practical suggestion. If knowing
+   something would make future estimates better (a recipe I make often, my usual
+   portion), suggest I add it to my notes in Bitebook: you can't save notes yourself,
+   and every future batch sees them.
 
 Every meal key above must appear exactly once in "meals". Reply with ONLY one JSON code
 block in exactly this format, with no other text:

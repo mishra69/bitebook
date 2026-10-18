@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { isUlid } from "../shared/ulid";
-import { MEAL_TYPES, photoKey, type DeletedMeal, type Meal, type NewMeal } from "../shared/meals";
+import { MEAL_TYPES, photoKey, type Analysis, type DeletedMeal, type Meal, type NewMeal } from "../shared/meals";
 import { PURGE_AFTER_DAYS } from "./purge";
 
 // Uploads happen in two steps so a flaky connection never leaves a half-saved meal:
@@ -106,7 +106,8 @@ meals.get("/meals", async (c) => {
   const page = rows.slice(0, limit);
   const next_before = rows.length > limit ? page[page.length - 1].taken_ms : null;
   const withPhotos = await attachPhotos(c.env.DB, user.id, page.map(({ taken_ms, ...m }) => m));
-  return c.json({ meals: withPhotos, next_before });
+  const latest = await loadAnalyses(c.env.DB, user.id, withPhotos.map((m) => m.id), true);
+  return c.json({ meals: withPhotos.map((m) => ({ ...m, analysis: latest.get(m.id)?.[0] ?? null })), next_before });
 });
 
 // GET /api/meals/:id — one meal, for the detail screen.
@@ -119,8 +120,44 @@ meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
     .first<Omit<Meal, "photos">>();
   if (!row) return c.json({ error: "not_found" }, 404);
   const [meal] = await attachPhotos(c.env.DB, user.id, [row]);
-  return c.json({ meal });
+  const all = await loadAnalyses(c.env.DB, user.id, [meal.id], false);
+  return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [] } });
 });
+
+// Analyses per meal, newest first. latestOnly keeps just the newest non-skipped one.
+async function loadAnalyses(db: D1Database, userId: string, mealIds: string[], latestOnly: boolean) {
+  const out = new Map<string, Analysis[]>();
+  if (mealIds.length === 0) return out;
+  const { results } = await db
+    .prepare(
+      `SELECT id, meal_id, created_at, model, skipped, payload FROM analyses
+       WHERE user_id = ?1 AND meal_id IN (SELECT value FROM json_each(?2)) ${latestOnly ? "AND skipped = 0" : ""}
+       ORDER BY created_at DESC`,
+    )
+    .bind(userId, JSON.stringify(mealIds))
+    .all<{ id: string; meal_id: string; created_at: string; model: string; skipped: number; payload: string }>();
+  for (const r of results) {
+    if (latestOnly && out.has(r.meal_id)) continue;
+    const p = JSON.parse(r.payload) as Partial<Analysis>;
+    const a: Analysis = {
+      id: r.id,
+      created_at: r.created_at,
+      model: r.model,
+      skipped: r.skipped === 1,
+      skip_reason: p.skip_reason ?? null,
+      description: p.description ?? "",
+      kcal: p.kcal ?? null,
+      protein_g: p.protein_g ?? null,
+      carbs_g: p.carbs_g ?? null,
+      fat_g: p.fat_g ?? null,
+      confidence: p.confidence ?? null,
+      comment: p.comment ?? null,
+      foods_used: p.foods_used ?? [],
+    };
+    out.set(r.meal_id, [...(out.get(r.meal_id) ?? []), a]);
+  }
+  return out;
+}
 
 export async function attachPhotos(db: D1Database, userId: string, rows: Omit<Meal, "photos">[]): Promise<Meal[]> {
   if (rows.length === 0) return [];
