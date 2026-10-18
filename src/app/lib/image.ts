@@ -1,4 +1,5 @@
 import { exifTakenAt } from "./exif";
+import { encodeJpeg } from "./jpeg";
 import { localIso, withLocalOffset } from "./time";
 
 // Turns a captured file into what the outbox stores: the original bytes untouched, a
@@ -30,10 +31,7 @@ export async function preparePhoto(file: File, capturedAt: Date): Promise<Prepar
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);
     canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
-    // Not canvas.toBlob: iOS Safari ignores its quality argument and encodes at ~0.95,
-    // which made display copies ~1.3 MB. toDataURL honours it.
-    const display = await (await fetch(canvas.toDataURL("image/jpeg", 0.8))).blob();
-    if (display.type !== "image/jpeg") throw new Error("encode_failed");
+    const display = await encodeJpeg(canvas, 0.8);
     canvas.width = canvas.height = 0; // free the backing store now; iOS caps total canvas memory
     return {
       original: new Blob([buf], { type: mime }),

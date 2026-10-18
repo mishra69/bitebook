@@ -2,6 +2,8 @@
 
 export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type MealType = (typeof MEAL_TYPES)[number];
+export const KINDS = ["meal", "label"] as const;
+export type Kind = (typeof KINDS)[number];
 
 export type NewPhoto = {
   id: string;
@@ -17,6 +19,7 @@ export type NewPhoto = {
 
 export type NewMeal = {
   id: string;
+  kind: Kind;
   taken_at: string; // ISO 8601 with the device's UTC offset
   tz: string; // IANA zone
   meal_type: MealType | null;
@@ -26,6 +29,7 @@ export type NewMeal = {
 
 export type Meal = {
   id: string;
+  kind: Kind;
   taken_at: string;
   tz: string;
   meal_type: MealType | null;
@@ -35,6 +39,7 @@ export type Meal = {
 
 export type DeletedMeal = {
   id: string;
+  kind: Kind;
   taken_at: string;
   meal_type: MealType | null;
   note: string | null;

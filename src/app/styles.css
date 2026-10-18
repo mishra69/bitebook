@@ -134,3 +134,17 @@ ul { margin: 0; padding-left: 1.2rem; }
   max-width: calc(100% - 2rem);
 }
 .toast .link { color: var(--bg); font-weight: 600; }
+.tabs { display: flex; gap: 0.25rem; background: var(--card); border-radius: 10px; padding: 0.25rem; margin-bottom: 0.5rem; }
+.tabs a { flex: 1; text-align: center; padding: 0.5rem; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 600; }
+.tabs a[aria-current="page"] { background: var(--fg); color: var(--bg); }
+.segmented { display: flex; border: 1px solid var(--muted); border-radius: 10px; overflow: hidden; }
+.segmented button { flex: 1; padding: 0.5rem; border: 0; background: none; color: var(--fg); font: inherit; }
+.segmented button.on { background: var(--fg); color: var(--bg); }
+.chip.label { border-style: dashed; }
+.meal-link { display: block; color: inherit; text-decoration: none; }
+.button.wide { width: 100%; margin: 0.75rem 0; }
+.button.danger { color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); margin-top: 1.5rem; }
+.detail h2 { font-size: 1.15rem; margin: 0.5rem 0 0.25rem; }
+.detail-photos { display: grid; gap: 0.5rem; margin: 0.75rem 0; }
+.detail-photos img { width: 100%; height: auto; border-radius: 10px; background: var(--card); }
+.timeline .thumb { width: 64px; height: 64px; }

@@ -105,7 +105,7 @@ rows and files for good.
 > **Tier:** Contract · **Verified:** 2026-10-18 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
-> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003).
+> of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003), `meals.kind` (0004).
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
 users(id)`, and every query filters on the signed-in user's id. That includes child
@@ -131,8 +131,6 @@ All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC off
 --    are never hard-deleted. D12 replaced that: src/worker/purge.ts removes meals
 --    deleted more than 30 days ago, with their photos (and, once they exist, their
 --    analyses and corrections).
-
--- meals gain: kind TEXT NOT NULL DEFAULT 'meal' CHECK (kind IN ('meal','label'))
 
 CREATE TABLE foods (                 -- the pantry
   id            TEXT PRIMARY KEY,
@@ -330,18 +328,17 @@ The import is all-or-nothing. If any check fails, nothing is stored.
 
 ## 7. Capture: what still needs an iPhone
 
-> **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2026-12-17
 
 Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). It was
 tested in Chromium: EXIF time, drafts surviving a reload, offline save, the queue
 draining on reconnect, and originals byte-identical in R2. These are only knowable on the
 phone. Delete this section once they're checked:
 
-- **Display size on iOS:** the next photo's display copy should be a few hundred KB.
-  iOS Safari ignored `toBlob`'s quality setting (1.3 MB at ~0.95), so the app now encodes
-  with `toDataURL`.
-- **Resuming uploads:** after leaving the app mid-upload and coming back, the upload
-  should resume within seconds.
+- **Display size on iOS:** the next photo's display copy should be about 250 KB, with
+  quality 0.8. Safari ignored the quality setting of both `toBlob` and `toDataURL`, so
+  display copies are now encoded in JS (`src/app/lib/jpeg.ts`). That costs ~0.3 s per
+  12 MP photo on a laptop; check that it still feels quick on the phone.
 - **Reload behind the camera:** if iOS reloads the app while the camera is open, the
   draft should come back.
 - **Offline:** capture in airplane mode, then reconnect. The meal should upload by
@@ -407,10 +404,9 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 > **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
 
-1. **Capture** (the home screen): a big camera button, the queue status, and today's meals.
-   The draft has a Meal / Label switch.
-2. **Timeline:** meals by day, with thumbnails and a badge for pending, in-batch or analyzed.
-3. **Meal detail:** the photos, note, every analysis (by model and date), and corrections.
+Built: Today (capture), Timeline and Meal detail (`src/app/`). Still to come: badges for
+in-batch or analyzed on timeline rows, and analyses and corrections on the detail screen.
+
 4. **Pantry and notes:** proposed foods to confirm or edit, active foods (mark finished),
    finished ones; the standing notes.
 5. **Export:** select meals, then share or copy, or use "Run via API" when a key is
@@ -422,9 +418,8 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 > **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
 
-2. Capture → queue → upload, verified on the iPhone. *Built and deployed. The on-device
-   checks are in §7.*
-3. Timeline and meal detail, plus the Meal / Label switch at capture.
+*Steps 1–3 are built. The remaining on-device checks for capture are in §7.*
+
 4. Export: batch creation, the prompt with its context block, and the share/copy handoff.
 5. Import: validation and storage, including proposed foods; the pantry and notes screen.
 6. Corrections.

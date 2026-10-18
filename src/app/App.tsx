@@ -1,8 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import { Capture } from "./Capture";
+import { MealDetail } from "./MealDetail";
 import { MealList } from "./MealList";
 import { GoogleSignIn } from "./SignIn";
+import { Timeline } from "./Timeline";
+import { ToastHost } from "./Toast";
 import { startSync } from "./lib/outbox";
+import { useRoute } from "./lib/router";
 import { liveVersion, versionLabel } from "./version";
 
 type Health = { user: string; userId: string; d1: string; r2: string } | { error: string };
@@ -23,6 +27,7 @@ export function App() {
   const [user, setUser] = useState<User | null>(rememberedUser);
   const [authState, setAuthState] = useState<"checking" | "ok" | "signed_out" | "offline" | "error">("checking");
   const [live, setLive] = useState<string>();
+  const route = useRoute();
 
   const checkSession = async () => {
     let h: Health;
@@ -93,11 +98,22 @@ export function App() {
       {!user && authState === "offline" && <p class="muted">You're offline. Sign in once you're back online.</p>}
       {user && (
         <>
-          <Capture userId={user.id} />
-          <MealList userId={user.id} />
+          <nav class="tabs" aria-label="Sections">
+            <a href="#/" aria-current={route.name === "today" ? "page" : undefined}>Today</a>
+            <a href="#/timeline" aria-current={route.name !== "today" ? "page" : undefined}>Timeline</a>
+          </nav>
+          {route.name === "today" && (
+            <>
+              <Capture userId={user.id} />
+              <MealList userId={user.id} />
+            </>
+          )}
+          {route.name === "timeline" && <Timeline userId={user.id} />}
+          {route.name === "meal" && <MealDetail id={route.id} />}
         </>
       )}
       <p class="version-tag" data-version>{versionLabel(live)}</p>
+      <ToastHost />
     </main>
   );
 }

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { isUlid } from "../shared/ulid";
-import { MEAL_TYPES, photoKey, type DeletedMeal, type Meal, type NewMeal } from "../shared/meals";
+import { KINDS, MEAL_TYPES, photoKey, type DeletedMeal, type Meal, type NewMeal } from "../shared/meals";
 import { PURGE_AFTER_DAYS } from "./purge";
 
 // Uploads happen in two steps so a flaky connection never leaves a half-saved meal:
@@ -51,6 +51,7 @@ meals.put("/photos/:id/:kind{original|display}", async (c) => {
 meals.post("/meals", async (c) => {
   const user = c.get("user");
   const m = await c.req.json<NewMeal>().catch(() => null);
+  if (m && typeof m === "object" && m.kind === undefined) m.kind = "meal"; // queued by builds before labels existed
   const problem = validate(m);
   if (problem) return c.json({ error: "bad_request", detail: problem }, 400);
   const meal = m!;
@@ -75,9 +76,9 @@ meals.post("/meals", async (c) => {
   const now = new Date().toISOString();
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO meals (id, user_id, taken_at, taken_ms, tz, meal_type, note, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-    ).bind(meal.id, user.id, meal.taken_at, Date.parse(meal.taken_at), meal.tz, meal.meal_type, meal.note, now),
+      `INSERT INTO meals (id, user_id, kind, taken_at, taken_ms, tz, meal_type, note, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+    ).bind(meal.id, user.id, meal.kind, meal.taken_at, Date.parse(meal.taken_at), meal.tz, meal.meal_type, meal.note, now),
     ...keyed.map((p) =>
       c.env.DB.prepare(
         `INSERT INTO photos (id, user_id, meal_id, position, original_key, original_mime, original_bytes,
@@ -89,29 +90,53 @@ meals.post("/meals", async (c) => {
   return c.json({ ok: true }, 201);
 });
 
-// GET /api/meals?since=<epoch ms> — newest first, with photo ids for thumbnails.
+// GET /api/meals?since=<epoch ms>&before=<epoch ms>&limit=<n> — newest first, with photo
+// ids for thumbnails. `next_before` pages further back (null when there's nothing older).
 meals.get("/meals", async (c) => {
   const user = c.get("user");
   const since = Number(c.req.query("since") ?? 0) || 0;
+  const before = Number(c.req.query("before") ?? 0) || Number.MAX_SAFE_INTEGER;
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50) || 50, 1), 200);
   const { results: rows } = await c.env.DB.prepare(
-    `SELECT id, taken_at, tz, meal_type, note FROM meals
-     WHERE user_id = ?1 AND deleted_at IS NULL AND taken_ms >= ?2
-     ORDER BY taken_ms DESC LIMIT 200`,
+    `SELECT id, kind, taken_at, tz, meal_type, note, taken_ms FROM meals
+     WHERE user_id = ?1 AND deleted_at IS NULL AND taken_ms >= ?2 AND taken_ms < ?3
+     ORDER BY taken_ms DESC LIMIT ?4`,
   )
-    .bind(user.id, since)
-    .all<Omit<Meal, "photos">>();
-  if (rows.length === 0) return c.json({ meals: [] });
-  const { results: photos } = await c.env.DB.prepare(
-    `SELECT id, meal_id, position, width, height FROM photos
-     WHERE user_id = ?1 AND meal_id IN (SELECT value FROM json_each(?2))
-     ORDER BY position`,
+    .bind(user.id, since, before, limit + 1)
+    .all<Omit<Meal, "photos"> & { taken_ms: number }>();
+  const page = rows.slice(0, limit);
+  const next_before = rows.length > limit ? page[page.length - 1].taken_ms : null;
+  const withPhotos = await attachPhotos(c.env.DB, user.id, page.map(({ taken_ms, ...m }) => m));
+  return c.json({ meals: withPhotos, next_before });
+});
+
+// GET /api/meals/:id — one meal, for the detail screen.
+meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
+  const user = c.get("user");
+  const row = await c.env.DB.prepare(
+    "SELECT id, kind, taken_at, tz, meal_type, note FROM meals WHERE id = ?1 AND user_id = ?2 AND deleted_at IS NULL",
   )
-    .bind(user.id, JSON.stringify(rows.map((r) => r.id)))
+    .bind(c.req.param("id"), user.id)
+    .first<Omit<Meal, "photos">>();
+  if (!row) return c.json({ error: "not_found" }, 404);
+  const [meal] = await attachPhotos(c.env.DB, user.id, [row]);
+  return c.json({ meal });
+});
+
+async function attachPhotos(db: D1Database, userId: string, rows: Omit<Meal, "photos">[]): Promise<Meal[]> {
+  if (rows.length === 0) return [];
+  const { results: photos } = await db
+    .prepare(
+      `SELECT id, meal_id, position, width, height FROM photos
+       WHERE user_id = ?1 AND meal_id IN (SELECT value FROM json_each(?2))
+       ORDER BY position`,
+    )
+    .bind(userId, JSON.stringify(rows.map((r) => r.id)))
     .all<Meal["photos"][number] & { meal_id: string }>();
   const byMeal = new Map<string, Meal["photos"]>();
   for (const { meal_id, ...p } of photos) byMeal.set(meal_id, [...(byMeal.get(meal_id) ?? []), p]);
-  return c.json({ meals: rows.map((r) => ({ ...r, photos: byMeal.get(r.id) ?? [] })) satisfies Meal[] });
-});
+  return rows.map((r) => ({ ...r, photos: byMeal.get(r.id) ?? [] }));
+}
 
 // DELETE /api/meals/:id — hides the meal everywhere at once. It can be restored for
 // PURGE_AFTER_DAYS; after that the daily purge removes its rows and files for good.
@@ -146,7 +171,7 @@ meals.post("/meals/:id/restore", async (c) => {
 meals.get("/meals/deleted", async (c) => {
   const user = c.get("user");
   const { results } = await c.env.DB.prepare(
-    `SELECT m.id, m.taken_at, m.meal_type, m.note, m.deleted_at,
+    `SELECT m.id, m.kind, m.taken_at, m.meal_type, m.note, m.deleted_at,
             (SELECT p.id FROM photos p WHERE p.meal_id = m.id AND p.user_id = ?1 ORDER BY p.position LIMIT 1) AS cover_photo_id
      FROM meals m WHERE m.user_id = ?1 AND m.deleted_at IS NOT NULL
      ORDER BY m.deleted_at DESC LIMIT 200`,
@@ -175,6 +200,8 @@ meals.get("/photos/:id/display", async (c) => {
 function validate(m: NewMeal | null): string | null {
   if (!m || typeof m !== "object") return "body";
   if (!isUlid(m.id)) return "id";
+  if (!KINDS.includes(m.kind)) return "kind";
+  if (m.kind === "label" && m.meal_type !== null) return "meal_type";
   if (!isIsoWithOffset(m.taken_at)) return "taken_at";
   if (typeof m.tz !== "string" || m.tz.length === 0 || m.tz.length > 64) return "tz";
   if (m.meal_type !== null && !MEAL_TYPES.includes(m.meal_type)) return "meal_type";

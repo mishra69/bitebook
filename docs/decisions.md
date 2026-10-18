@@ -142,3 +142,13 @@ reading becomes a proposed pantry food that the user confirms. The model never c
 memory directly. This adds principle 9, a `kind` on meals, the `foods` and `notes`
 tables, and context, label and `food_code` parts to the prompt and reply contract. That
 contract isn't implemented yet, so it was edited in place and stays at version 1.
+
+## D14 · 2026-10-18 · Display copies are JPEG-encoded in JS (follows D11)
+
+The `toDataURL` fix in D11 didn't hold. The next real meal came from the new build, since
+its display copy uploaded first, yet it still carried Safari's ~0.95 quantization tables.
+iOS Safari ignores the quality argument of canvas JPEG encoding altogether. Display
+copies are now encoded with `jpeg-js` from the canvas pixels: quality 0.8 on every
+browser, about 250 KB per photo, loaded only when a photo is processed. The encoder is
+CommonJS and returns `Buffer.from(...)`; a one-line stand-in replaces that instead of
+patching the library.

@@ -18,3 +18,10 @@ declare namespace google.accounts.id {
   function renderButton(el: HTMLElement, opts: Record<string, unknown>): void;
   function disableAutoSelect(): void;
 }
+
+declare module "jpeg-js/lib/encoder.js" {
+  export default function encode(
+    img: { data: Uint8ClampedArray; width: number; height: number },
+    quality: number,
+  ): { data: Uint8Array; width: number; height: number };
+}
