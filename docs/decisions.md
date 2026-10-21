@@ -217,3 +217,44 @@ To keep this in line with principle 10, there are three limits:
 
 The format's sample question is a neutral placeholder, so it can't be mistaken for a
 real question that was already answered.
+
+## D19 · 2026-10-21 · Meals stay open for helpings; each photo keeps its own time
+
+The user's goal is to fill a plate once and skip seconds, and until then to document
+every helping. So a meal stays open while it's eaten, gaining a photo per helping. Two
+gaps showed up:
+
+- **Every photo had the meal's time.** The prompt listed "photos: A-1, A-2, A-3", which a
+  model could read as three angles of one plate and undercount. Each photo now stores its
+  own time (`photos.taken_at`, migration 0009), from its EXIF or else the moment it was
+  captured. `prompt/5` names each file by its time, shows the gap from the first photo
+  ("+16 min"), and says to count photos minutes apart as separate helpings and photos
+  about a minute apart as one plate.
+- **iPhone camera photos carry no EXIF at all.** Checking all seven real originals in R2
+  (every SHA-256 still matched) showed no date, no offset, not even the camera make: iOS
+  strips metadata from photos taken through a web page. So the capture moment is the
+  time used on iPhone, and no location ever reaches storage. The backfill therefore used
+  each photo's ULID, which is minted when the photo is processed, a second or so after
+  the shutter. It moved one photo, the second helping of the 2026-10-20 dinner, from
+  19:39 to 19:48:25. One-second differences were left alone.
+- **A forgotten Save.** The draft is stored on the phone from its first photo, and now
+  stored *before* it's shown, so a visible photo is a stored photo. The only real losses
+  are a lost or broken phone, or deleting the home-screen app; a dead battery or a
+  reload loses nothing. A web app can't run in the background, so a draft idle for 90
+  minutes after its last photo is saved the next time the app opens or comes back,
+  with a note saying so. Times come from the photos, so saving late changes nothing.
+
+A push reminder for a forgotten draft was considered and rejected for now: it needs the
+draft on the server, notification keys and a frequent job, and it asks the user to act,
+while auto-save asks nothing.
+
+## D20 · 2026-10-21 · Plan changes: logging reminders in, corrections parked
+
+- **Added: logging reminders.** If nothing is logged for a day or two, a push
+  notification nudges the user. This guards against forgetting the app altogether, which
+  auto-save can't. It follows the `pwa-cloudflare` skill's Web Push notes and uses
+  `webpush-edge`.
+- **Added: uploading draft photos as they're taken.** Kept as a later step: the risk it
+  covers is small (D19), and it needs a cleanup job for discarded drafts.
+- **Parked: corrections** (editing an analysis by hand). Questions asked in the chat (D18)
+  cover most of what they were for.

@@ -23,8 +23,8 @@ test("pending meals become a batch whose prompt and photos can be handed to a ch
   expect(batches).toHaveLength(1);
   const prompt: string = batches[0].prompt;
   expect(prompt).toContain(`Batch: ${batches[0].id}`);
-  expect(prompt).toContain("[A] Sun 2026-10-11 08:10 · breakfast · photos: A-1_2026-10-11_0810.jpg\nNote: oats");
-  expect(prompt).toContain("[C] Sun 2026-10-11 19:45 · dinner · photos: C-1_2026-10-11_1945.jpg\nNote: dal");
+  expect(prompt).toContain("[A] Sun 2026-10-11 08:10 · breakfast · photos: A-1_2026-10-11_0810.jpg (08:10)\nNote: oats");
+  expect(prompt).toContain("[C] Sun 2026-10-11 19:45 · dinner · photos: C-1_2026-10-11_1945.jpg (19:45)\nNote: dal");
 
   await card.getByRole("button", { name: "Copy prompt" }).click();
   await expect(card.getByRole("button", { name: "Prompt copied ✓" })).toBeVisible();
@@ -89,4 +89,17 @@ test("the prompt carries notes, remembered foods, the 30-day digest and the tren
   expect(prompt).toContain("[F1] Mission whole wheat tortilla · 1 tortilla (45 g) · 130 kcal · P4 C22 F3.5");
   expect(prompt).toMatch(/19:30 dinner · dal tadka with 2 rotis · ~550 kcal · P20 C75 F18 \[F1\]/);
   expect(prompt).toContain("Last 7 days: 1 day logged · avg 550 kcal/day · protein 20 g/day");
+});
+
+test("helpings show in the prompt with each photo's own time", async ({ request }) => {
+  for (const m of (await (await request.get("/api/batches/pending-meals")).json()).meals) await request.delete(`/api/meals/${m.id}`);
+  const meal = await seedMeal(request, "2026-10-20T19:32:05-05:00", "two helpings", "dinner", [
+    "2026-10-20T19:32:05-05:00",
+    "2026-10-20T19:48:40-05:00",
+  ]);
+  const res = await request.post("/api/batches", { data: { meal_ids: [meal] } });
+  const { batch } = await res.json();
+  expect(batch.prompt).toContain("photos: A-1_2026-10-20_1932.jpg (19:32), A-2_2026-10-20_1948.jpg (19:48, +16 min)");
+  expect(batch.entries[0].files.map((f: { name: string }) => f.name)).toEqual(["A-1_2026-10-20_1932.jpg", "A-2_2026-10-20_1948.jpg"]);
+  await request.post(`/api/batches/${batch.id}/abandon`);
 });

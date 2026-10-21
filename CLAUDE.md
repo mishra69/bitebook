@@ -35,6 +35,22 @@ Precedence when they disagree: **Core > code > Contract text > Plan text.**
 - `docs/decisions.md` is append-only. Never edit old entries. Add a new entry that
   supersedes the old one.
 
+## How we work
+
+Every change goes through the same loop, in one commit where possible:
+
+1. **Decide.** Talk it through with the user first; they decide product questions. Record
+   anything that changes Core or Contract, or reverses an earlier choice, as a new entry
+   in `docs/decisions.md`.
+2. **Update the spec** sections the change touches, and bump their `Verified` dates. Built
+   Contract parts shrink to pointers to the code; built Plan items leave the build order.
+3. **Build with tests:** unit tests for logic, e2e tests for flows (see Tests). Real model
+   replies become fixtures in `tests/fixtures/replies/`.
+4. **Ship:** `npm run migrate` for new migrations, then `npm run deploy`. Check the live
+   site refuses requests without a session.
+5. **List what only the iPhone can show** in spec §7, and say so to the user. Check their
+   real data (D1, R2, Workers logs) before asking them to test again.
+
 ## Tests
 
 Run `npm test` and `npm run test:e2e` before committing a change to behavior, and add or

@@ -81,9 +81,9 @@ meals.post("/meals", async (c) => {
     ...keyed.map((p) =>
       c.env.DB.prepare(
         `INSERT INTO photos (id, user_id, meal_id, position, original_key, original_mime, original_bytes,
-           original_sha256, display_key, display_bytes, width, height)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
-      ).bind(p.id, user.id, meal.id, p.position, p.originalKey, p.mime, p.bytes, p.sha256, p.displayKey, p.display_bytes, p.width, p.height),
+           original_sha256, display_key, display_bytes, width, height, taken_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
+      ).bind(p.id, user.id, meal.id, p.position, p.originalKey, p.mime, p.bytes, p.sha256, p.displayKey, p.display_bytes, p.width, p.height, p.taken_at ?? meal.taken_at),
     ),
   ]);
   return c.json({ ok: true }, 201);
@@ -163,7 +163,7 @@ export async function attachPhotos(db: D1Database, userId: string, rows: Omit<Me
   if (rows.length === 0) return [];
   const { results: photos } = await db
     .prepare(
-      `SELECT id, meal_id, position, width, height FROM photos
+      `SELECT id, meal_id, position, width, height, taken_at FROM photos
        WHERE user_id = ?1 AND meal_id IN (SELECT value FROM json_each(?2))
        ORDER BY position`,
     )
@@ -250,6 +250,7 @@ function validate(m: NewMeal | null): string | null {
     if (!Number.isInteger(p.bytes) || p.bytes <= 0 || !isSha(p.sha256)) return "photo.original";
     if (!Number.isInteger(p.display_bytes) || p.display_bytes <= 0 || !isSha(p.display_sha256)) return "photo.display";
     for (const n of [p.width, p.height]) if (n !== null && !(Number.isInteger(n) && n > 0)) return "photo.size";
+    if (p.taken_at !== undefined && !isIsoWithOffset(p.taken_at)) return "photo.taken_at";
   }
   return null;
 }

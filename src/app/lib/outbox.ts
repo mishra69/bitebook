@@ -15,6 +15,8 @@ export type OutboxPhoto = {
   width: number;
   height: number;
   uploaded: { original: boolean; display: boolean };
+  takenAt?: string; // when the photo was taken (EXIF, else capture time); missing before D19
+  addedAt?: number; // when it was added to the draft (epoch ms), for auto-saving idle drafts
 };
 
 export type OutboxMeal = {
@@ -220,6 +222,7 @@ async function uploadMeal(meal: OutboxMeal) {
       display_sha256: p.displaySha256,
       width: p.width,
       height: p.height,
+      taken_at: p.takenAt,
     })),
   };
   await ensureQueued(meal.id);

@@ -6,7 +6,8 @@ import type { MealType } from "./meals";
 // prompt/2 (2026-10-18): suggestions point to Bitebook notes, since a model can't save them.
 // prompt/3 (2026-10-18): the reply names the model that wrote it, as far as it knows (D17).
 // prompt/4 (2026-10-18): up to 2 questions in the chat before the JSON, never repeated (D18).
-export const PROMPT_VERSION = "prompt/4";
+// prompt/5 (2026-10-21): each photo's own time, and helpings counted separately (D19).
+export const PROMPT_VERSION = "prompt/5";
 export const MAX_QUESTIONS = 2;
 export const ASKED_MAX_LINES = 60;
 export const REPLY_SCHEMA = "bitebook.reply/1";
@@ -43,7 +44,7 @@ export type PromptMeal = {
   taken_at: string;
   meal_type: MealType | null;
   note: string | null;
-  photos: { position: number }[];
+  photos: { position: number; taken_at: string }[];
 };
 
 // A, B, …, Z, AA, AB, …: short keys a model is unlikely to garble.
@@ -144,7 +145,12 @@ export function buildPrompt(p: PromptInput): string {
   const asked = p.asked.slice(0, ASKED_MAX_LINES);
   const meals = p.meals
     .map((m) => {
-      const files = [...m.photos].sort((a, b) => a.position - b.position).map((ph) => photoFileName(m.key, ph.position, m.taken_at));
+      const photos = [...m.photos].sort((a, b) => a.position - b.position);
+      const first = Date.parse(photos[0]?.taken_at ?? m.taken_at);
+      const files = photos.map((ph) => {
+        const later = Math.floor((Date.parse(ph.taken_at) - first) / 60_000);
+        return `${photoFileName(m.key, ph.position, ph.taken_at)} (${ph.taken_at.slice(11, 16)}${later >= 1 ? `, +${later} min` : ""})`;
+      });
       return (
         `[${m.key}] ${weekday(m.taken_at)} ${m.taken_at.slice(0, 10)} ${m.taken_at.slice(11, 16)} · ${m.meal_type ?? "meal"}` +
         ` · photos: ${files.join(", ")}\nNote: ${m.note?.trim() || "—"}`
@@ -186,6 +192,10 @@ ${meals}
    recognize a remembered food, use its values and list its code in foods_used. Stay
    consistent with how similar meals in the last ${DIGEST_DAYS} days were estimated. If a photo is
    unusable, set skipped to true and say why in skip_reason.
+   A meal's photos can be separate helpings. Photos taken several minutes apart are
+   additional servings: count what's on each one, and mention the number of helpings in
+   the description. Photos within a minute or so of each other are usually the same
+   plate from another angle: don't count it twice.
 2. Changes to what I should remember: add a food when you read a label or see the same
    dish recurring in the last ${DIGEST_DAYS} days; update one whose values look off; retire one I
    seem to have stopped eating. "add" has code null; "update" and "retire" use an

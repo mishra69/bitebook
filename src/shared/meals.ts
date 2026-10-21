@@ -13,6 +13,7 @@ export type NewPhoto = {
   display_sha256: string;
   width: number | null;
   height: number | null;
+  taken_at?: string; // this photo's own time; missing from builds before D19 (the meal's time is used)
 };
 
 export type NewMeal = {
@@ -30,7 +31,7 @@ export type Meal = {
   tz: string;
   meal_type: MealType | null;
   note: string | null;
-  photos: { id: string; position: number; width: number | null; height: number | null }[];
+  photos: { id: string; position: number; width: number | null; height: number | null; taken_at: string }[];
   analysis?: Analysis | null; // the latest non-skipped one, in lists
   analyses?: Analysis[]; // every one, newest first, on the detail screen
 };

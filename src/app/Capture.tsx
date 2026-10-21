@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ulid } from "../shared/ulid";
 import { MEAL_TYPES, type MealType } from "../shared/meals";
+import { isStaleDraft } from "./lib/drafts";
 import { preparePhoto } from "./lib/image";
+import { showToast } from "./lib/notify";
+import { timeOfDay } from "./lib/time";
 import { deleteMeal, getDraft, putMeal, sync, type OutboxMeal } from "./lib/outbox";
 import { deviceTz } from "./lib/time";
 
@@ -23,14 +26,30 @@ export function Capture({ userId }: { userId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // On open and on every return to the app: restore the draft, or save it if it was left
+  // open (the meal's time comes from its photos, so saving late changes nothing).
   useEffect(() => {
-    getDraft(userId).then((d) => d && setDraftState(d));
+    const check = async () => {
+      const d = await getDraft(userId);
+      if (!d) return;
+      if (!isStaleDraft(d)) return setDraftState(d);
+      await putMeal({ ...d, note: d.note?.trim() || null, draft: false });
+      setDraftState(null);
+      const n = d.photos.length;
+      showToast({ text: `Saved your ${timeOfDay(d.takenAt)} meal (${n} photo${n === 1 ? "" : "s"}) that was left open.` }, 10_000);
+      sync();
+    };
+    check();
+    const onVisible = () => document.visibilityState === "visible" && check();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [userId]);
 
+  // Store first, then show: a photo on screen is a photo already safe on the phone.
   const setDraft = async (d: OutboxMeal | null) => {
     clearTimeout(noteTimer.current);
-    setDraftState(d);
     if (d) await putMeal(d);
+    setDraftState(d);
   };
 
   // Notes are persisted after a pause in typing, not on every keystroke.
@@ -69,6 +88,8 @@ export function Capture({ userId }: { userId: string }) {
           width: p.width,
           height: p.height,
           uploaded: { original: false, display: false },
+          takenAt: p.takenAt,
+          addedAt: Date.now(),
         };
         d = d
           ? { ...d, photos: [...d.photos, photo] }

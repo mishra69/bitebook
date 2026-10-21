@@ -270,7 +270,7 @@ async function viewBatches(db: D1Database, userId: string, where: string, arg: s
         .filter(([, mealId]) => meals.has(mealId)) // a meal deleted after batching drops out
         .map(([key, mealId]) => {
           const meal = meals.get(mealId)!;
-          return { key, meal, files: meal.photos.map((p) => ({ photo_id: p.id, name: photoFileName(key, p.position, meal.taken_at) })) };
+          return { key, meal, files: meal.photos.map((p) => ({ photo_id: p.id, name: photoFileName(key, p.position, p.taken_at ?? meal.taken_at) })) };
         }),
     });
   }

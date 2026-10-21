@@ -64,13 +64,20 @@ Laptop
 
 ## 3. Core flows
 
-> **Tier:** Core · **Verified:** 2026-10-18
+> **Tier:** Core · **Verified:** 2026-10-21
 
 **Capture.** Tap "New meal" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
 and queues both copies. The upload sends the original and the display copy. The meal is
 "pending analysis". A photo of a package or nutrition label can be part of any meal; the
 model uses whatever it can read.
+
+A meal stays open while it's eaten: photograph every helping as you take it. Each photo
+keeps its own time, and the prompt shows the gaps ("+16 min"), so the model counts
+helpings instead of mistaking them for angles of one plate. The draft is stored on the
+phone from its first photo. If it's left open for 90 minutes after its last photo, the
+app saves it the next time it opens; the meal's times come from its photos, so a late save
+changes nothing (D19).
 
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
@@ -111,11 +118,11 @@ rows and files for good.
 
 ## 4. Data model (D1)
 
-> **Tier:** Contract · **Verified:** 2026-10-18 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-21 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
-> `batches`, `analyses`, `foods` and `notes` (0006).
+> `batches`, `analyses`, `foods` and `notes` (0006), `questions` (0008), `photos.taken_at` (0009).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -167,7 +174,7 @@ is derived, not stored.
 
 ## 5. Storage layout (R2)
 
-> **Tier:** Contract · **Verified:** 2026-10-17 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-21 · **Expires:** 2027-04-17
 >
 > Implemented in `photoKey()` in `src/shared/meals.ts`, which is authoritative.
 
@@ -176,19 +183,21 @@ Layout: `users/<user_id>/originals/YYYY/MM/<photo_id>.<ext>` and
 their prefix, so one user's photos can be exported or deleted as a unit. The month
 comes from the meal's local `taken_at`, so roll-off can select by prefix.
 
-Originals are stored byte for byte, EXIF included, which makes them the corpus. Display
+Originals are stored byte for byte, which makes them the corpus. On iPhone they carry no
+EXIF at all, since iOS strips it from web-page camera captures, so no location is ever
+stored (D19). Photos from other sources keep whatever metadata they came with. Display
 copies are 1600 px on the long edge, JPEG at quality 0.8, with EXIF stripped (location
 never reaches a chatbot). They're what gets exported for analysis. Vision models
 downscale to about this size anyway, and the smaller files keep uploads cheap.
 
 ## 6. Prompt and reply contract
 
-> **Tier:** Contract · **Verified:** 2026-10-18 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-21 · **Expires:** 2027-04-17
 >
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/4`)
+### Prompt (`prompt/5`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -203,6 +212,9 @@ code can't say:
   The trend is computed by the app, never by the model.
 - A batch is capped at 20 photos (`MAX_PHOTOS_PER_BATCH`), a common per-message
   attachment limit in chat apps.
+- Each photo is listed with its own time and its gap from the meal's first photo, and the
+  prompt explains helpings: several minutes apart means another serving to count, about a
+  minute apart means another angle of the same plate (D19).
 - Questions happen in the chat, before the JSON (D18): at most 2, only when an answer would
   move an estimate by about 100 kcal or matter for future meals, and never one listed under
   "Questions already asked". The model folds the answers into its one reply; nothing is
@@ -232,22 +244,22 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
 
 ## 7. Capture: what still needs an iPhone
 
-> **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-21 · **Expires:** 2026-12-17
 
 Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). It was
 tested in Chromium: EXIF time, drafts surviving a reload, offline save, the queue
 draining on reconnect, and originals byte-identical in R2. These are only knowable on the
 phone. Delete this section once they're checked:
 
-- **Display size on iOS:** the next photo's display copy should be about 250 KB, with
-  quality 0.8. Safari ignored the quality setting of both `toBlob` and `toDataURL`, so
-  display copies are now encoded in JS (`src/app/lib/jpeg.ts`). That costs ~0.3 s per
-  12 MP photo on a laptop; check that it still feels quick on the phone.
 - **Reload behind the camera:** if iOS reloads the app while the camera is open, the
   draft should come back.
 - **Offline:** capture in airplane mode, then reconnect. The meal should upload by
   itself.
 - **Memory:** several 12 MP photos in one meal should not crash the app.
+- **Helpings:** a meal with photos minutes apart should come back from the model as one
+  meal with its helpings counted (and named in the description).
+- **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
+  should be saved, with a note saying so.
 
 ## 8. Roll-off of originals
 
@@ -316,21 +328,33 @@ API" on a batch, and:
 
 ## 11. Build order
 
-> **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-21 · **Expires:** 2027-01-17
 
-*Steps 1–5 are built. The remaining on-device checks for capture are in §7.*
+*Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19).
+The remaining on-device checks for capture are in §7.*
 
-6. Corrections.
-7. The roll-off script.
-8. The API path (optional; it reuses everything from steps 4–5).
+6. **Logging reminders.** If nothing has been logged for a day or two, send a push
+   notification ("You haven't logged a meal since Tuesday"). Follow the `pwa-cloudflare`
+   skill's Web Push notes and depend on `webpush-edge`: it works on iPhone only from the
+   home-screen app; permission must be asked inside a tap; handle
+   `pushsubscriptionchange`; re-send the subscription on every app open. A daily cron
+   (next to the purge) finds users with no meal in N days. N and quiet hours are settings.
+7. **Upload draft photos as they're taken**, so Save is instant and photos survive a
+   lost phone mid-meal. Needs a nightly cleanup of R2 files no saved meal refers to
+   (discarded drafts).
+8. The roll-off script.
+9. The API path (optional; it reuses everything from steps 4–5).
+
+Parked: **corrections** (editing an analysis's numbers by hand). Questions in the chat
+(D18) cover most of the need; revisit if real use shows otherwise (D20).
 
 ## 12. Open questions
 
-> **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-21 · **Expires:** 2026-12-17
 
 - **Handoff to the Claude app.** Built as two buttons: "Copy prompt", then "Share photos"
   through the iOS share sheet (Download on browsers that can't share files). To check on
   the iPhone: does the Claude app appear in the share sheet for several images, do they
   arrive in one message, and does the 20-photo cap match its real limit?
-- **Meal grouping.** Should photos taken within N minutes of each other merge into one
-  meal automatically, or is it always manual?
+- **Reminder rules.** How many days without a meal before a reminder (one or two), and
+  at what time of day? Should a reminder ever repeat, or only once per gap?

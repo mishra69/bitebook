@@ -50,23 +50,26 @@ export function ulid(t = Date.now()) {
   return s;
 }
 
-export async function seedMeal(request: APIRequestContext, takenAt: string, note: string, mealType = "lunch") {
+// photoTimes: each photo's own time (one photo at takenAt by default).
+export async function seedMeal(request: APIRequestContext, takenAt: string, note: string, mealType = "lunch", photoTimes = [takenAt]) {
   const jpg = readFileSync(fixture("meal-no-offset.jpg"));
   const sha = createHash("sha256").update(jpg).digest("hex");
-  const photo = ulid(), meal = ulid();
-  for (const kind of ["display", "original"]) {
-    const r = await request.put(`/api/photos/${photo}/${kind}`, {
-      headers: { "Content-Type": "image/jpeg", "X-Sha256": sha, "X-Taken-At": takenAt },
-      data: jpg,
-    });
-    expect(r.status()).toBe(200);
+  const meal = ulid();
+  const photos = [];
+  for (const [position, time] of photoTimes.entries()) {
+    const photo = ulid();
+    for (const kind of ["display", "original"]) {
+      const r = await request.put(`/api/photos/${photo}/${kind}`, {
+        headers: { "Content-Type": "image/jpeg", "X-Sha256": sha, "X-Taken-At": takenAt },
+        data: jpg,
+      });
+      expect(r.status()).toBe(200);
+    }
+    photos.push({ id: photo, position, mime: "image/jpeg", bytes: jpg.length, sha256: sha,
+      display_bytes: jpg.length, display_sha256: sha, width: 1600, height: 1200, taken_at: time });
   }
   const r = await request.post("/api/meals", {
-    data: {
-      id: meal, taken_at: takenAt, tz: "America/Chicago", meal_type: mealType, note,
-      photos: [{ id: photo, position: 0, mime: "image/jpeg", bytes: jpg.length, sha256: sha,
-        display_bytes: jpg.length, display_sha256: sha, width: 1600, height: 1200 }],
-    },
+    data: { id: meal, taken_at: takenAt, tz: "America/Chicago", meal_type: mealType, note, photos },
   });
   expect(r.status()).toBe(201);
   return meal;

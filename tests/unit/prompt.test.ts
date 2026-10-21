@@ -39,7 +39,16 @@ describe("buildPrompt", () => {
     digest: [],
     trend: { days: 0, kcal: null, protein_g: null },
     asked: [],
-    meals: [{ key: "A", taken_at: "2026-10-16T19:32:05-05:00", meal_type: "dinner" as const, note: null, photos: [{ position: 1 }, { position: 0 }] }],
+    meals: [
+      {
+        key: "A", taken_at: "2026-10-16T19:32:05-05:00", meal_type: "dinner" as const, note: null,
+        photos: [
+          { position: 2, taken_at: "2026-10-16T19:48:40-05:00" }, // a second helping
+          { position: 0, taken_at: "2026-10-16T19:32:05-05:00" },
+          { position: 1, taken_at: "2026-10-16T19:32:35-05:00" }, // same plate, another angle
+        ],
+      },
+    ],
   };
   it("shows empty memory as dashes, lists meals with their photo files, and asks for the reply format", () => {
     const p = buildPrompt(base);
@@ -47,7 +56,10 @@ describe("buildPrompt", () => {
     expect(p).toContain("Notes: —");
     expect(p).toContain("Remembered foods (codes stay the same across batches):\n—");
     expect(p).toContain("Last 7 days: nothing analyzed yet");
-    expect(p).toContain("[A] Fri 2026-10-16 19:32 · dinner · photos: A-1_2026-10-16_1932.jpg, A-2_2026-10-16_1932.jpg\nNote: —");
+    expect(p).toContain(
+      "[A] Fri 2026-10-16 19:32 · dinner · photos: A-1_2026-10-16_1932.jpg (19:32), A-2_2026-10-16_1932.jpg (19:32), A-3_2026-10-16_1948.jpg (19:48, +16 min)\nNote: —",
+    );
+    expect(p).toContain("Photos taken several minutes apart are\n   additional servings");
     expect(p).toContain('"schema": "bitebook.reply/1"');
     expect(p).toContain('"batch_id": "01BATCH"');
     expect(p).toContain("suggest I add it to my notes in Bitebook");
