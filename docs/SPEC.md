@@ -364,6 +364,13 @@ The remaining on-device checks for capture are in §7.*
 8. The roll-off script.
 9. The API path (optional; it reuses everything from steps 4–5).
 
+Backlog (corpus only, no effect on nutrition data):
+- **👎 on a bad transcript.** One tap on the meal detail flags a voice note's transcript
+  as poor; nothing is edited. Later, re-run the flagged notes (and a sample of
+  unflagged ones) through a newer transcription model and compare. The kept audio
+  makes that possible. A better transcript is stored alongside, never fed back into
+  past analyses (D21).
+
 Parked: **corrections** (editing an analysis's numbers by hand). Questions in the chat
 (D18) cover most of the need; revisit if real use shows otherwise (D20).
 
