@@ -337,8 +337,11 @@ The remaining on-device checks for capture are in §7.*
    notification ("You haven't logged a meal since Tuesday"). Follow the `pwa-cloudflare`
    skill's Web Push notes and depend on `webpush-edge`: it works on iPhone only from the
    home-screen app; permission must be asked inside a tap; handle
-   `pushsubscriptionchange`; re-send the subscription on every app open. A daily cron
-   (next to the purge) finds users with no meal in N days. N and quiet hours are settings.
+   `pushsubscriptionchange`; re-send the subscription on every app open. Decided
+   2026-10-21: remind after **24 hours** with no meal logged, delivered **in the morning**
+   (around 8:00 in the zone of the user's last meal), so it helps for the day ahead. An
+   hourly cron finds users whose local time is 8:00 and whose last meal is more than 24
+   hours old.
 7. **Upload draft photos as they're taken**, so Save is instant and photos survive a
    lost phone mid-meal. Needs a nightly cleanup of R2 files no saved meal refers to
    (discarded drafts).
@@ -356,5 +359,5 @@ Parked: **corrections** (editing an analysis's numbers by hand). Questions in th
   through the iOS share sheet (Download on browsers that can't share files). To check on
   the iPhone: does the Claude app appear in the share sheet for several images, do they
   arrive in one message, and does the 20-photo cap match its real limit?
-- **Reminder rules.** How many days without a meal before a reminder (one or two), and
-  at what time of day? Should a reminder ever repeat, or only once per gap?
+- **Reminder repeats.** After a morning reminder, if still nothing is logged, remind again
+  the next morning, or only once per gap?
