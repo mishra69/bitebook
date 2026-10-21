@@ -117,3 +117,60 @@ test("a draft still in progress stays open across a reload", async ({ page }) =>
   await page.getByRole("button", { name: "Discard" }).click();
   await expect(page.locator(".draft")).toHaveCount(0);
 });
+
+test("a voice note is recorded into the draft, survives a reload, uploads, and is transcribed", async ({ page, request }) => {
+  await openApp(page);
+  await page.getByRole("button", { name: "New meal" }).click();
+  await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
+  await expect(page.locator(".draft figure.thumb")).toHaveCount(1);
+  await page.locator(".draft .note").fill("voice meal");
+
+  await page.getByRole("button", { name: /Add a voice note \(up to 1:00\)/ }).click();
+  await expect(page.locator(".voice.recording")).toContainText("Recording");
+  await expect(page.getByRole("button", { name: "Save meal" })).toHaveCount(0); // can't save mid-recording
+  await page.waitForTimeout(2200);
+  await page.locator(".voice.recording").click();
+  await expect(page.locator(".voice.saved")).toContainText(/Voice note · 0:0[23]/);
+
+  await page.reload(); // stored on the phone, like the photos
+  await expect(page.locator(".voice.saved")).toContainText("Voice note");
+  await page.getByRole("button", { name: "Save meal" }).click();
+  const saved = await serverMeal(request, "voice meal");
+
+  // The server transcribes after saving (a stub in tests; Whisper in production).
+  let meal: any;
+  await expect
+    .poll(async () => ((meal = (await (await request.get(`/api/meals/${saved.id}`)).json()).meal), meal.voice?.transcript), { timeout: 15_000 })
+    .toMatch(/^\(test transcript of \d+ bytes\)$/);
+  expect(meal.voice.duration_ms).toBeGreaterThan(1500);
+  expect(meal.voice.transcript_model).toBe("stub");
+  const audio = await request.get(`/api/meals/${saved.id}/voice`);
+  expect(audio.status()).toBe(200);
+  expect(audio.headers()["content-type"]).toMatch(/^audio\//);
+
+  await page.goto(`/#/meal/${saved.id}`);
+  await expect(page.locator(".voice-detail")).toContainText("(test transcript of");
+  await expect(page.locator(".voice-detail audio")).toHaveCount(1);
+});
+
+test("a voice note can be removed from the draft, and over-long ones are refused", async ({ page, request }) => {
+  await openApp(page);
+  await page.getByRole("button", { name: "New meal" }).click();
+  await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
+  await expect(page.locator(".draft figure.thumb")).toHaveCount(1);
+  await page.getByRole("button", { name: /Add a voice note/ }).click();
+  await page.waitForTimeout(1200);
+  await page.locator(".voice.recording").click();
+  await page.locator(".voice.saved").getByRole("button", { name: "Remove" }).click();
+  await expect(page.getByRole("button", { name: /Add a voice note/ })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Discard" }).click();
+
+  const res = await request.post("/api/meals", {
+    data: { id: "01M5H00000000000000000VCE1", taken_at: "2026-10-21T12:00:00-05:00", tz: "UTC", meal_type: null, note: null,
+      photos: [{ id: "01M5H00000000000000000PHT1", position: 0, mime: "image/jpeg", bytes: 1, sha256: "0".repeat(64), display_bytes: 1, display_sha256: "0".repeat(64), width: null, height: null }],
+      voice: { mime: "audio/mp4", bytes: 1000, sha256: "0".repeat(64), duration_ms: 90_000 } },
+  });
+  expect(res.status()).toBe(400);
+  expect((await res.json()).detail).toBe("voice.duration");
+});

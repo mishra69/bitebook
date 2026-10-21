@@ -1,7 +1,7 @@
 // Permanently removes meals deleted more than PURGE_AFTER_DAYS ago: their R2 files
 // and every row that belongs to them. Runs daily from the cron trigger in
 // wrangler.jsonc, across all users (it's an operator job, not a user request).
-// Every table that hangs off a meal must be purged here too (analyses now; corrections later).
+// Every table that hangs off a meal must be purged here too (analyses and voice notes now).
 export const PURGE_AFTER_DAYS = 30;
 const BATCH = 100;
 
@@ -22,13 +22,17 @@ export async function purgeDeleted(env: Env, now = Date.now()): Promise<number> 
     )
       .bind(ids)
       .all<{ original_key: string; display_key: string }>();
-    const keys = photos.flatMap((p) => [p.original_key, p.display_key]);
+    const { results: voices } = await env.DB.prepare("SELECT r2_key FROM voice_notes WHERE meal_id IN (SELECT value FROM json_each(?1))")
+      .bind(ids)
+      .all<{ r2_key: string }>();
+    const keys = [...photos.flatMap((p) => [p.original_key, p.display_key]), ...voices.map((v) => v.r2_key)];
     // Files first: if this fails, the rows remain and tomorrow's run tries again.
     // (Deleting a key that's already gone, e.g. an original rolled off locally, is a no-op.)
     for (let i = 0; i < keys.length; i += 1000) await env.PHOTOS.delete(keys.slice(i, i + 1000));
 
     await env.DB.batch([
       env.DB.prepare("DELETE FROM analyses WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
+      env.DB.prepare("DELETE FROM voice_notes WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
       env.DB.prepare("DELETE FROM photos WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
       env.DB.prepare("DELETE FROM meals WHERE id IN (SELECT value FROM json_each(?1))").bind(ids),
     ]);

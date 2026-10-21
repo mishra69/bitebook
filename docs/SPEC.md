@@ -79,6 +79,11 @@ phone from its first photo. If it's left open for 90 minutes after its last phot
 app saves it the next time it opens; the meal's times come from its photos, so a late save
 changes nothing (D19).
 
+A meal can have one **voice note** of up to a minute, recorded in the draft, for example to
+describe each helping before saving. The server transcribes it with Whisper (Workers
+AI), and the prompt carries the transcript. The transcript isn't editable: if it's often
+wrong, the fix is a better transcriber, not hand-editing (D21).
+
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
 hands the images and the prompt to the chatbot. The batch is stored as "open".
@@ -122,7 +127,8 @@ rows and files for good.
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
-> `batches`, `analyses`, `foods` and `notes` (0006), `questions` (0008), `photos.taken_at` (0009).
+> `batches`, `analyses`, `foods` and `notes` (0006), `questions` (0008), `photos.taken_at` (0009),
+> `voice_notes` (0010).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -178,8 +184,9 @@ is derived, not stored.
 >
 > Implemented in `photoKey()` in `src/shared/meals.ts`, which is authoritative.
 
-Layout: `users/<user_id>/originals/YYYY/MM/<photo_id>.<ext>` and
-`users/<user_id>/display/YYYY/MM/<photo_id>.jpg`. Everything a user owns sits under
+Layout: `users/<user_id>/originals/YYYY/MM/<photo_id>.<ext>`,
+`users/<user_id>/display/YYYY/MM/<photo_id>.jpg` and, for voice notes,
+`users/<user_id>/voice/YYYY/MM/<meal_id>.<m4a|webm>` (`voiceKey()`). Everything a user owns sits under
 their prefix, so one user's photos can be exported or deleted as a unit. The month
 comes from the meal's local `taken_at`, so roll-off can select by prefix.
 
@@ -197,7 +204,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/5`)
+### Prompt (`prompt/6`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -215,6 +222,10 @@ code can't say:
 - Each photo is listed with its own time and its gap from the meal's first photo, and the
   prompt explains helpings: several minutes apart means another serving to count, about a
   minute apart means another angle of the same plate (D19).
+- A voice note's transcript follows the meal's note, labelled as the user's own words,
+  and the prompt says to trust it over the photos but allow for slips in food names. A
+  transcription that failed is retried when the batch is created; if it still fails, the
+  prompt says a recording exists but couldn't be transcribed (D21).
 - Questions happen in the chat, before the JSON (D18): at most 2, only when an answer would
   move an estimate by about 100 kcal or matter for future meals, and never one listed under
   "Questions already asked". The model folds the answers into its one reply; nothing is
@@ -260,6 +271,10 @@ phone. Delete this section once they're checked:
   meal with its helpings counted (and named in the description).
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
   should be saved, with a note saying so.
+- **Voice notes:** does the microphone prompt come up once, or on every launch of the
+  home-screen app? Does recording stop cleanly at 1:00? Is the transcript good with food
+  names (the meal detail shows it)? If transcription is often poor, try another model or
+  drop the feature (D21).
 
 ## 8. Roll-off of originals
 
@@ -330,7 +345,8 @@ API" on a batch, and:
 
 > **Tier:** Plan · **Verified:** 2026-10-21 · **Expires:** 2027-01-17
 
-*Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19).
+*Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19), and
+voice notes (D21).
 The remaining on-device checks for capture are in §7.*
 
 6. **Logging reminders.** If nothing has been logged for a day or two, send a push

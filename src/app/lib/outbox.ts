@@ -19,6 +19,8 @@ export type OutboxPhoto = {
   addedAt?: number; // when it was added to the draft (epoch ms), for auto-saving idle drafts
 };
 
+export type OutboxVoice = { blob: Blob; mime: string; sha256: string; durationMs: number; uploaded: boolean };
+
 export type OutboxMeal = {
   id: string;
   userId: string; // only the user who captured it uploads it
@@ -28,6 +30,7 @@ export type OutboxMeal = {
   note: string | null;
   photos: OutboxPhoto[];
   createdAt: string;
+  voice?: OutboxVoice; // one spoken note per meal (D21)
   error?: string; // set when the server rejected it; it then waits for the user
   // Still being composed. Kept here from the first photo so an iOS reload while the
   // camera is open loses nothing; never uploaded until it's saved.
@@ -183,9 +186,24 @@ export async function retryMeal(meal: OutboxMeal) {
 
 async function uploadMeal(meal: OutboxMeal) {
   // Display copies first: they're small, so a short stay in the app still gets them done.
-  const total = meal.photos.reduce((n, p) => n + p.original.size + p.display.size, 0);
-  let sent = meal.photos.reduce((n, p) => n + (p.uploaded.original ? p.original.size : 0) + (p.uploaded.display ? p.display.size : 0), 0);
+  const voiceSize = meal.voice?.blob.size ?? 0;
+  const total = meal.photos.reduce((n, p) => n + p.original.size + p.display.size, 0) + voiceSize;
+  let sent =
+    meal.photos.reduce((n, p) => n + (p.uploaded.original ? p.original.size : 0) + (p.uploaded.display ? p.display.size : 0), 0) +
+    (meal.voice?.uploaded ? voiceSize : 0);
   changed({ progress: { sent, total } });
+  if (meal.voice && !meal.voice.uploaded) {
+    await request(`/api/voice/${meal.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": meal.voice.mime, "X-Sha256": meal.voice.sha256, "X-Taken-At": meal.takenAt },
+      body: meal.voice.blob,
+    });
+    meal.voice.uploaded = true;
+    sent += voiceSize;
+    changed({ progress: { sent, total } });
+    await ensureQueued(meal.id);
+    await putMeal(meal);
+  }
   for (const kind of ["display", "original"] as const) {
     for (const p of meal.photos) {
       if (p.uploaded[kind]) continue;
@@ -224,6 +242,9 @@ async function uploadMeal(meal: OutboxMeal) {
       height: p.height,
       taken_at: p.takenAt,
     })),
+    voice: meal.voice
+      ? { mime: meal.voice.mime, bytes: meal.voice.blob.size, sha256: meal.voice.sha256, duration_ms: meal.voice.durationMs }
+      : undefined,
   };
   await ensureQueued(meal.id);
   try {
@@ -232,6 +253,7 @@ async function uploadMeal(meal: OutboxMeal) {
     // The server doesn't have every file as described: upload them all again next pass.
     if (!(e instanceof Rejected) || e.message !== "files_missing") throw e;
     for (const p of meal.photos) p.uploaded = { original: false, display: false };
+    if (meal.voice) meal.voice.uploaded = false;
     await putMeal(meal);
     throw new Error("files_missing");
   }

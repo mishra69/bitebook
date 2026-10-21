@@ -13,7 +13,12 @@ export default defineConfig({
     baseURL: "http://localhost:4310",
     timezoneId: "America/Chicago",
     viewport: { width: 390, height: 844 },
-    launchOptions: existsSync(sandboxChromium) ? { executablePath: sandboxChromium } : {},
+    permissions: ["microphone"],
+    launchOptions: {
+      ...(existsSync(sandboxChromium) ? { executablePath: sandboxChromium } : {}),
+      // A fake microphone (a test tone) for voice notes, without a permission prompt.
+      args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
+    },
   },
   webServer: {
     command: "scripts/e2e-server.sh",

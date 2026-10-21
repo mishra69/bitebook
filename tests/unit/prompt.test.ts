@@ -100,3 +100,22 @@ describe("questions already asked (prompt/4)", () => {
     );
   });
 });
+
+describe("voice notes (prompt/6)", () => {
+  const meal = (voice: { transcript: string | null } | null) => ({
+    key: "A", taken_at: "2026-10-21T19:30:00-05:00", meal_type: "dinner" as const, note: null,
+    photos: [{ position: 0, taken_at: "2026-10-21T19:30:00-05:00" }], voice,
+  });
+  const build = (voice: { transcript: string | null } | null) =>
+    buildPrompt({ batchId: "01B", notes: [], foods: [], digest: [], asked: [], trend: { days: 0, kcal: null, protein_g: null }, meals: [meal(voice)] });
+
+  it("adds the transcript under the meal's note, and says how to weigh it", () => {
+    const p = build({ transcript: "  First plate was dal and two rotis, second plate just rice.  " });
+    expect(p).toContain("Note: —\nVoice note (my words, transcribed): First plate was dal and two rotis, second plate just rice.\n");
+    expect(p).toContain("trust it over what the photos suggest");
+  });
+  it("says so when a recording couldn't be transcribed, and adds nothing without one", () => {
+    expect(build({ transcript: null })).toContain("Voice note (my words, transcribed): (recorded, but it couldn't be transcribed)");
+    expect(build(null)).not.toContain("Voice note (my words");
+  });
+});

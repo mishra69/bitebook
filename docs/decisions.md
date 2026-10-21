@@ -258,3 +258,28 @@ while auto-save asks nothing.
   covers is small (D19), and it needs a cleanup job for discarded drafts.
 - **Parked: corrections** (editing an analysis by hand). Questions asked in the chat (D18)
   cover most of what they were for.
+
+## D21 · 2026-10-21 · Voice notes, transcribed on the server
+
+iOS dictation is poor with the way the user describes meals, especially mixed English
+and Hindi food names. So a meal can carry one spoken note, recorded in the app and at
+most 60 seconds long, typically describing each helping just before saving.
+
+- **Text reaches the model, not audio.** Not every chat app accepts audio attachments,
+  and text fits the prompt, the digest and model comparisons. The Worker transcribes
+  with Whisper large-v3-turbo on Workers AI (`src/worker/transcribe.ts`) right after the
+  meal is saved, and again when a batch is created if that failed. Remembered food
+  names are passed as Whisper's initial prompt to help with spelling. The cost is 46.63
+  neurons per audio minute against a free allowance of 10,000 a day (about 214
+  minutes), so a few notes a day use a few percent of it.
+- **The transcript isn't editable.** Editing it would be the kind of chore principle 10
+  rules out. If transcription is often poor, the answer is another model, or dropping
+  the feature.
+- **Both are stored.** The transcript, with the model that made it, is what prompts use.
+  The audio is kept only so transcription models can be compared later. A new
+  transcript never rewrites past nutrition data.
+- **Like photos:** the note lives in the draft on the phone, uploads before the meal
+  commit with a SHA-256 check, and is purged with its meal.
+
+Open risks, for the iPhone: home-screen web apps may ask for the microphone on every
+launch, and leaving the app ends a recording early (what was said is kept).

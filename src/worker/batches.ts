@@ -14,6 +14,7 @@ import {
   type RememberedFood,
 } from "../shared/prompt";
 import { extractJson, validateReply } from "../shared/reply";
+import { transcribe } from "./transcribe";
 import { isUlid, ulid } from "../shared/ulid";
 
 // Most chat apps take up to 20 attachments in one message. Verify on the phone (SPEC §12).
@@ -68,6 +69,15 @@ batches.post("/batches", async (c) => {
   const photoCount = meals.reduce((n, m) => n + m.photos.length, 0);
   if (photoCount > MAX_PHOTOS_PER_BATCH) return c.json({ error: "too_many_photos", max: MAX_PHOTOS_PER_BATCH }, 413);
 
+  // Voice notes: retry any transcription that hasn't succeeded yet, then use the text.
+  const { results: voiceRows } = await c.env.DB.prepare(
+    "SELECT meal_id, transcript FROM voice_notes WHERE user_id = ?1 AND meal_id IN (SELECT value FROM json_each(?2))",
+  )
+    .bind(user.id, JSON.stringify(ids))
+    .all<{ meal_id: string; transcript: string | null }>();
+  const voice = new Map<string, string | null>();
+  for (const v of voiceRows) voice.set(v.meal_id, v.transcript ?? (await transcribe(c.env, user.id, v.meal_id)));
+
   const [notes, foods, digest, asked] = await Promise.all([
     c.env.DB.prepare("SELECT body FROM notes WHERE user_id = ?1 ORDER BY created_at").bind(user.id).all<{ body: string }>(),
     c.env.DB.prepare(
@@ -92,7 +102,7 @@ batches.post("/batches", async (c) => {
     digest,
     trend: computeTrend(digest, Date.now()),
     asked: asked.results,
-    meals: meals.map((m, i) => ({ key: batchKey(i), ...m })),
+    meals: meals.map((m, i) => ({ key: batchKey(i), ...m, voice: voice.has(m.id) ? { transcript: voice.get(m.id) ?? null } : null })),
   });
   await c.env.DB.prepare(
     `INSERT INTO batches (id, user_id, created_at, prompt_version, prompt_text, key_map, active_codes)

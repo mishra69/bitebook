@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ulid } from "../shared/ulid";
-import { MEAL_TYPES, type MealType } from "../shared/meals";
+import { MAX_VOICE_MS, MEAL_TYPES, type MealType } from "../shared/meals";
 import { isStaleDraft } from "./lib/drafts";
-import { preparePhoto } from "./lib/image";
+import { preparePhoto, sha256Hex } from "./lib/image";
+import { formatDuration, startRecording, type Recording } from "./lib/voice";
 import { showToast } from "./lib/notify";
 import { timeOfDay } from "./lib/time";
 import { deleteMeal, getDraft, putMeal, sync, type OutboxMeal } from "./lib/outbox";
@@ -25,6 +26,8 @@ export function Capture({ userId }: { userId: string }) {
   const [draft, setDraftState] = useState<OutboxMeal | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const draftRef = useRef<OutboxMeal | null>(null);
+  draftRef.current = draft;
 
   // On open and on every return to the app: restore the draft, or save it if it was left
   // open (the meal's time comes from its photos, so saving late changes nothing).
@@ -188,6 +191,18 @@ export function Capture({ userId }: { userId: string }) {
             value={draft.note ?? ""}
             onInput={(e) => setNote(draft, (e.target as HTMLTextAreaElement).value)}
           />
+          <VoiceNote
+            draft={draft}
+            onRecorded={async (r) => {
+              const d = draftRef.current;
+              if (!d) return;
+              const sha256 = await sha256Hex(await r.blob.arrayBuffer());
+              await setDraft({ ...d, voice: { blob: r.blob, mime: r.mime, sha256, durationMs: r.durationMs, uploaded: false } });
+            }}
+            onRemove={() => draftRef.current && setDraft({ ...draftRef.current, voice: undefined })}
+            onError={setError}
+            onRecordingChange={(on) => setBusy(on ? "Recording…" : null)}
+          />
         </section>
       )}
       {error && <p class="bad">{error}</p>}
@@ -204,5 +219,78 @@ export function Capture({ userId }: { userId: string }) {
         )}
       </div>
     </>
+  );
+}
+
+// One spoken note per meal, up to MAX_VOICE_MS (D21). It's stored in the draft like the
+// photos, uploaded with the meal, and transcribed on the server; the text isn't editable.
+function VoiceNote({
+  draft,
+  onRecorded,
+  onRemove,
+  onError,
+  onRecordingChange,
+}: {
+  draft: OutboxMeal;
+  onRecorded: (r: Recording) => Promise<void>;
+  onRemove: () => void;
+  onError: (msg: string | null) => void;
+  onRecordingChange: (recording: boolean) => void;
+}) {
+  const [rec, setRec] = useState<{ stop: () => Promise<Recording>; started: number } | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const url = useMemo(() => (draft.voice ? URL.createObjectURL(draft.voice.blob) : null), [draft.voice?.blob]);
+  useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
+
+  const finish = async (r: Recording) => {
+    setRec(null);
+    onRecordingChange(false);
+    if (r.blob.size > 0) await onRecorded(r);
+  };
+
+  useEffect(() => {
+    if (!rec) return;
+    const tick = setInterval(() => setNow(Date.now()), 250);
+    // Leaving the app ends the recording (iOS would freeze it anyway); keep what was said.
+    const onHidden = () => document.visibilityState === "hidden" && rec.stop().then(finish);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      clearInterval(tick);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
+  }, [rec]);
+
+  const start = async () => {
+    onError(null);
+    try {
+      const r = await startRecording(MAX_VOICE_MS, finish);
+      setNow(Date.now());
+      setRec(r);
+      onRecordingChange(true);
+    } catch {
+      onError("Bitebook couldn't use the microphone. Allow it when asked, or check Settings → Safari → Microphone.");
+    }
+  };
+
+  if (rec) {
+    return (
+      <button class="voice recording" onClick={() => rec.stop().then(finish)}>
+        ● Recording {formatDuration(now - rec.started)} / {formatDuration(MAX_VOICE_MS)} · tap to stop
+      </button>
+    );
+  }
+  if (draft.voice && url) {
+    return (
+      <div class="voice saved">
+        <span>🎙 Voice note · {formatDuration(draft.voice.durationMs)}</span>
+        <audio controls src={url} preload="metadata" />
+        <button class="link" onClick={onRemove}>Remove</button>
+      </div>
+    );
+  }
+  return (
+    <button class="voice" onClick={start}>
+      🎙 Add a voice note (up to {formatDuration(MAX_VOICE_MS)})
+    </button>
   );
 }

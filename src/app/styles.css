@@ -171,3 +171,9 @@ ul { margin: 0; padding-left: 1.2rem; }
 .memory .card .note { width: 100%; }
 .tabs a { padding: 0.5rem 0.25rem; font-size: 0.95rem; }
 .asked { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+.voice { justify-self: start; border: 1px dashed var(--muted); border-radius: 10px; padding: 0.55rem 0.9rem; background: none; color: var(--fg); font: inherit; }
+.voice.recording { border-style: solid; border-color: var(--bad); color: var(--bad); font-variant-numeric: tabular-nums; }
+.voice.saved { display: grid; gap: 0.4rem; border-style: solid; width: 100%; }
+.voice.saved audio, .voice-detail audio { width: 100%; }
+.voice-detail { margin: 0.75rem 0; display: grid; gap: 0.5rem; }
+.voice-detail p { margin: 0; }

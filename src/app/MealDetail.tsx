@@ -44,6 +44,14 @@ export function MealDetail({ id }: { id: string }) {
         ))}
       </div>
       {meal.note && <p class="meal-note">{meal.note}</p>}
+      {meal.voice && (
+        <div class="card voice-detail">
+          <audio controls src={`/api/meals/${meal.id}/voice`} preload="none" />
+          <p class={meal.voice.transcript ? "" : "muted"}>
+            {meal.voice.transcript ?? "Transcribing… (it'll be done by the time you analyze)"}
+          </p>
+        </div>
+      )}
       <h3 class="section-title">Analysis</h3>
       {meal.analyses?.length ? meal.analyses.map((a) => <AnalysisCard key={a.id} a={a} />) : <p class="muted">Not analyzed yet.</p>}
       <button class="button secondary danger" onClick={remove}>

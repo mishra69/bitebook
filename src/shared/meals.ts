@@ -23,7 +23,13 @@ export type NewMeal = {
   meal_type: MealType | null;
   note: string | null;
   photos: NewPhoto[];
+  voice?: NewVoice; // uploaded beforehand, like the photos
 };
+
+// A spoken note for the meal (D21), at most MAX_VOICE_MS long.
+export const MAX_VOICE_MS = 60_000;
+export type NewVoice = { mime: string; bytes: number; sha256: string; duration_ms: number };
+export type VoiceNote = { duration_ms: number; transcript: string | null; transcript_model: string | null };
 
 export type Meal = {
   id: string;
@@ -32,6 +38,7 @@ export type Meal = {
   meal_type: MealType | null;
   note: string | null;
   photos: { id: string; position: number; width: number | null; height: number | null; taken_at: string }[];
+  voice?: VoiceNote | null;
   analysis?: Analysis | null; // the latest non-skipped one, in lists
   analyses?: Analysis[]; // every one, newest first, on the detail screen
 };
@@ -67,6 +74,12 @@ export function photoKey(userId: string, kind: "original" | "display", photoId: 
   const month = takenAt.slice(0, 4) + "/" + takenAt.slice(5, 7);
   const ext = kind === "display" ? "jpg" : extFor(mime);
   return `users/${userId}/${kind === "original" ? "originals" : "display"}/${month}/${photoId}.${ext}`;
+}
+
+export function voiceKey(userId: string, mealId: string, takenAt: string, mime: string) {
+  const month = takenAt.slice(0, 4) + "/" + takenAt.slice(5, 7);
+  const ext = mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac") ? "m4a" : mime.includes("webm") ? "webm" : mime.includes("ogg") ? "ogg" : "bin";
+  return `users/${userId}/voice/${month}/${mealId}.${ext}`;
 }
 
 function extFor(mime: string) {

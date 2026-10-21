@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { isUlid } from "../shared/ulid";
-import { MEAL_TYPES, photoKey, type Analysis, type DeletedMeal, type Meal, type NewMeal } from "../shared/meals";
+import { MAX_VOICE_MS, MEAL_TYPES, photoKey, voiceKey, type Analysis, type DeletedMeal, type Meal, type NewMeal, type VoiceNote } from "../shared/meals";
+import { transcribe } from "./transcribe";
 import { PURGE_AFTER_DAYS } from "./purge";
 
 // Uploads happen in two steps so a flaky connection never leaves a half-saved meal:
@@ -11,6 +12,7 @@ const MAX_ORIGINAL = 40 * 1024 * 1024;
 const MAX_DISPLAY = 4 * 1024 * 1024;
 const MAX_NOTE = 2000;
 const MAX_PHOTOS = 10;
+const MAX_VOICE_BYTES = 5 * 1024 * 1024; // 60 s of AAC is ~0.5 MB; generous for other codecs
 
 export const meals = new Hono<AppEnv>();
 
@@ -47,6 +49,25 @@ meals.put("/photos/:id/:kind{original|display}", async (c) => {
   return c.json({ ok: true });
 });
 
+// PUT /api/voice/:mealId — the meal's voice note (D21), uploaded before the meal commit, like
+// photos. Headers: Content-Type (audio/*), X-Sha256, X-Taken-At (the meal's).
+meals.put("/voice/:mealId", async (c) => {
+  const user = c.get("user");
+  const mealId = c.req.param("mealId");
+  const sha = c.req.header("X-Sha256");
+  const takenAt = c.req.header("X-Taken-At");
+  const mime = (c.req.header("Content-Type") ?? "").split(";")[0].trim().toLowerCase();
+  if (!isUlid(mealId) || !isSha(sha) || !isIsoWithOffset(takenAt)) return c.json({ error: "bad_request" }, 400);
+  if (!mime.startsWith("audio/")) return c.json({ error: "bad_type" }, 415);
+  const existing = await c.env.DB.prepare("SELECT 1 FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2").bind(mealId, user.id).first();
+  if (existing) return c.json({ ok: true, already: true });
+  const body = await c.req.arrayBuffer();
+  if (body.byteLength === 0 || body.byteLength > MAX_VOICE_BYTES) return c.json({ error: "bad_size" }, 413);
+  if (hex(await crypto.subtle.digest("SHA-256", body)) !== sha) return c.json({ error: "checksum_mismatch" }, 422);
+  await c.env.PHOTOS.put(voiceKey(user.id, mealId, takenAt, mime), body, { sha256: sha, httpMetadata: { contentType: mime } });
+  return c.json({ ok: true });
+});
+
 // POST /api/meals — commit a meal whose photo files are already uploaded. Idempotent.
 meals.post("/meals", async (c) => {
   const user = c.get("user");
@@ -70,6 +91,11 @@ meals.post("/meals", async (c) => {
       return { ...p, originalKey, displayKey };
     }),
   );
+  const voiceKeyFor = meal.voice ? voiceKey(user.id, meal.id, meal.taken_at, meal.voice.mime) : null;
+  if (meal.voice && voiceKeyFor) {
+    const v = await c.env.PHOTOS.head(voiceKeyFor);
+    if (!v || v.size !== meal.voice.bytes || !v.checksums.sha256 || hex(v.checksums.sha256) !== meal.voice.sha256) missing.push("voice");
+  }
   if (missing.length) return c.json({ error: "files_missing", missing }, 409);
 
   const now = new Date().toISOString();
@@ -85,7 +111,17 @@ meals.post("/meals", async (c) => {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
       ).bind(p.id, user.id, meal.id, p.position, p.originalKey, p.mime, p.bytes, p.sha256, p.displayKey, p.display_bytes, p.width, p.height, p.taken_at ?? meal.taken_at),
     ),
+    ...(meal.voice
+      ? [
+          c.env.DB.prepare(
+            `INSERT INTO voice_notes (meal_id, user_id, r2_key, mime, bytes, sha256, duration_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+          ).bind(meal.id, user.id, voiceKeyFor, meal.voice.mime, meal.voice.bytes, meal.voice.sha256, meal.voice.duration_ms, now),
+        ]
+      : []),
   ]);
+  // Transcribe after answering: the meal is saved either way, and export retries if needed.
+  if (meal.voice) c.executionCtx.waitUntil(transcribe(c.env, user.id, meal.id));
   return c.json({ ok: true }, 201);
 });
 
@@ -121,7 +157,20 @@ meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
   if (!row) return c.json({ error: "not_found" }, 404);
   const [meal] = await attachPhotos(c.env.DB, user.id, [row]);
   const all = await loadAnalyses(c.env.DB, user.id, [meal.id], false);
-  return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [] } });
+  const voice = await c.env.DB.prepare("SELECT duration_ms, transcript, transcript_model FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2")
+    .bind(meal.id, user.id)
+    .first<VoiceNote>();
+  return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [], voice } });
+});
+
+// GET /api/meals/:id/voice — the voice note's audio, for playback.
+meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}/voice", async (c) => {
+  const row = await c.env.DB.prepare("SELECT r2_key, mime FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2")
+    .bind(c.req.param("id"), c.get("user").id)
+    .first<{ r2_key: string; mime: string }>();
+  const obj = row && (await c.env.PHOTOS.get(row.r2_key));
+  if (!obj) return c.json({ error: "not_found" }, 404);
+  return new Response(obj.body, { headers: { "Content-Type": row.mime, "Cache-Control": "private, max-age=31536000, immutable" } });
 });
 
 // Analyses per meal, newest first. latestOnly keeps just the newest non-skipped one.
@@ -251,6 +300,13 @@ function validate(m: NewMeal | null): string | null {
     if (!Number.isInteger(p.display_bytes) || p.display_bytes <= 0 || !isSha(p.display_sha256)) return "photo.display";
     for (const n of [p.width, p.height]) if (n !== null && !(Number.isInteger(n) && n > 0)) return "photo.size";
     if (p.taken_at !== undefined && !isIsoWithOffset(p.taken_at)) return "photo.taken_at";
+  }
+  if (m.voice !== undefined) {
+    const v = m.voice;
+    if (!v || typeof v.mime !== "string" || !v.mime.startsWith("audio/")) return "voice.mime";
+    if (!Number.isInteger(v.bytes) || v.bytes <= 0 || v.bytes > MAX_VOICE_BYTES || !isSha(v.sha256)) return "voice.file";
+    // A little slack over the cap: recorders stop a few hundred ms late.
+    if (!Number.isInteger(v.duration_ms) || v.duration_ms <= 0 || v.duration_ms > MAX_VOICE_MS + 3000) return "voice.duration";
   }
   return null;
 }

@@ -7,7 +7,8 @@ import type { MealType } from "./meals";
 // prompt/3 (2026-10-18): the reply names the model that wrote it, as far as it knows (D17).
 // prompt/4 (2026-10-18): up to 2 questions in the chat before the JSON, never repeated (D18).
 // prompt/5 (2026-10-21): each photo's own time, and helpings counted separately (D19).
-export const PROMPT_VERSION = "prompt/5";
+// prompt/6 (2026-10-21): a meal's voice note, as transcribed text (D21).
+export const PROMPT_VERSION = "prompt/6";
 export const MAX_QUESTIONS = 2;
 export const ASKED_MAX_LINES = 60;
 export const REPLY_SCHEMA = "bitebook.reply/1";
@@ -45,6 +46,7 @@ export type PromptMeal = {
   meal_type: MealType | null;
   note: string | null;
   photos: { position: number; taken_at: string }[];
+  voice?: { transcript: string | null } | null; // null transcript: recorded but not transcribed
 };
 
 // A, B, …, Z, AA, AB, …: short keys a model is unlikely to garble.
@@ -153,7 +155,8 @@ export function buildPrompt(p: PromptInput): string {
       });
       return (
         `[${m.key}] ${weekday(m.taken_at)} ${m.taken_at.slice(0, 10)} ${m.taken_at.slice(11, 16)} · ${m.meal_type ?? "meal"}` +
-        ` · photos: ${files.join(", ")}\nNote: ${m.note?.trim() || "—"}`
+        ` · photos: ${files.join(", ")}\nNote: ${m.note?.trim() || "—"}` +
+        (m.voice ? `\nVoice note (my words, transcribed): ${m.voice.transcript?.trim() || "(recorded, but it couldn't be transcribed)"}` : "")
       );
     })
     .join("\n");
@@ -192,6 +195,8 @@ ${meals}
    recognize a remembered food, use its values and list its code in foods_used. Stay
    consistent with how similar meals in the last ${DIGEST_DAYS} days were estimated. If a photo is
    unusable, set skipped to true and say why in skip_reason.
+   A voice note is me describing the meal in my own words (it may describe each photo):
+   trust it over what the photos suggest, but allow for transcription slips in food names.
    A meal's photos can be separate helpings. Photos taken several minutes apart are
    additional servings: count what's on each one, and mention the number of helpings in
    the description. Photos within a minute or so of each other are usually the same

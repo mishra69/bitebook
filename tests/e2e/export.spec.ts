@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openApp, seedMeal, sql, ulid } from "./helpers";
+import { openApp, seedMeal, serverMeal, sql, ulid } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -101,5 +101,23 @@ test("helpings show in the prompt with each photo's own time", async ({ request 
   const { batch } = await res.json();
   expect(batch.prompt).toContain("photos: A-1_2026-10-20_1932.jpg (19:32), A-2_2026-10-20_1948.jpg (19:48, +16 min)");
   expect(batch.entries[0].files.map((f: { name: string }) => f.name)).toEqual(["A-1_2026-10-20_1932.jpg", "A-2_2026-10-20_1948.jpg"]);
+  await request.post(`/api/batches/${batch.id}/abandon`);
+});
+
+test("a voice note's transcript goes into the prompt", async ({ page, request }) => {
+  for (const m of (await (await request.get("/api/batches/pending-meals")).json()).meals) await request.delete(`/api/meals/${m.id}`);
+  await openApp(page);
+  await page.getByRole("button", { name: "New meal" }).click();
+  await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
+  await expect(page.locator(".draft figure.thumb")).toHaveCount(1);
+  await page.locator(".draft .note").fill("voice to prompt");
+  await page.getByRole("button", { name: /Add a voice note/ }).click();
+  await page.waitForTimeout(1500);
+  await page.locator(".voice.recording").click();
+  await expect(page.locator(".voice.saved")).toBeVisible();
+  await page.getByRole("button", { name: "Save meal" }).click();
+  const meal = await serverMeal(request, "voice to prompt");
+  const { batch } = await (await request.post("/api/batches", { data: { meal_ids: [meal.id] } })).json();
+  expect(batch.prompt).toMatch(/Note: voice to prompt\nVoice note \(my words, transcribed\): \(test transcript of \d+ bytes\)/);
   await request.post(`/api/batches/${batch.id}/abandon`);
 });
