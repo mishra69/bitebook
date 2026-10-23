@@ -74,6 +74,7 @@ function AnalysisCard({ a }: { a: Analysis }) {
           <p class="analysis-desc">{a.description}</p>
           <p class="macros">
             <strong>~{n(a.kcal)} kcal</strong> · protein {n(a.protein_g)} g · carbs {n(a.carbs_g)} g · fat {n(a.fat_g)} g
+            {a.fiber_g !== null && ` · fiber ${n(a.fiber_g)} g`}
           </p>
           {a.comment && <p class="muted small">{a.comment}</p>}
         </>

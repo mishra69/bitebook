@@ -199,6 +199,7 @@ async function loadAnalyses(db: D1Database, userId: string, mealIds: string[], l
       protein_g: p.protein_g ?? null,
       carbs_g: p.carbs_g ?? null,
       fat_g: p.fat_g ?? null,
+      fiber_g: p.fiber_g ?? null,
       confidence: p.confidence ?? null,
       comment: p.comment ?? null,
       foods_used: p.foods_used ?? [],

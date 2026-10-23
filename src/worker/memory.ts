@@ -43,7 +43,7 @@ memory.delete("/notes/:id", async (c) => {
 
 memory.get("/foods", async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT code, name, serving, kcal, protein_g, carbs_g, fat_g, status, updated_at FROM foods
+    `SELECT code, name, serving, kcal, protein_g, carbs_g, fat_g, fiber_g, status, updated_at FROM foods
      WHERE user_id = ?1 ORDER BY status, CAST(substr(code, 2) AS INTEGER)`,
   )
     .bind(c.get("user").id)

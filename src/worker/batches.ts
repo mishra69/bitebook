@@ -81,7 +81,7 @@ batches.post("/batches", async (c) => {
   const [notes, foods, digest, asked] = await Promise.all([
     c.env.DB.prepare("SELECT body FROM notes WHERE user_id = ?1 ORDER BY created_at").bind(user.id).all<{ body: string }>(),
     c.env.DB.prepare(
-      "SELECT code, name, serving, kcal, protein_g, carbs_g, fat_g FROM foods WHERE user_id = ?1 AND status = 'active' ORDER BY CAST(substr(code, 2) AS INTEGER)",
+      "SELECT code, name, serving, kcal, protein_g, carbs_g, fat_g, fiber_g FROM foods WHERE user_id = ?1 AND status = 'active' ORDER BY CAST(substr(code, 2) AS INTEGER)",
     )
       .bind(user.id)
       .all<RememberedFood>(),
@@ -180,17 +180,17 @@ batches.post("/batches/:id/import", async (c) => {
       remembered.push({ action: "add", code, name: r.name });
       stmts.push(
         c.env.DB.prepare(
-          `INSERT INTO foods (id, user_id, code, name, serving, kcal, protein_g, carbs_g, fat_g, source_batch_id, created_at, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)`,
-        ).bind(ulid(), user.id, code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, batch.id, now),
+          `INSERT INTO foods (id, user_id, code, name, serving, kcal, protein_g, carbs_g, fat_g, fiber_g, source_batch_id, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)`,
+        ).bind(ulid(), user.id, code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, r.fiber_g, batch.id, now),
       );
     } else if (r.action === "update") {
       remembered.push({ action: "update", code: r.code!, name: r.name });
       stmts.push(
         c.env.DB.prepare(
           `UPDATE foods SET name = ?3, serving = ?4, kcal = ?5, protein_g = ?6, carbs_g = ?7, fat_g = ?8,
-             source_batch_id = ?9, updated_at = ?10 WHERE user_id = ?1 AND code = ?2`,
-        ).bind(user.id, r.code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, batch.id, now),
+             fiber_g = ?9, source_batch_id = ?10, updated_at = ?11 WHERE user_id = ?1 AND code = ?2`,
+        ).bind(user.id, r.code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, r.fiber_g, batch.id, now),
       );
     } else {
       remembered.push({ action: "retire", code: r.code!, name: r.name });
@@ -311,6 +311,7 @@ async function loadDigest(db: D1Database, userId: string): Promise<DigestEntry[]
       protein_g: n(p.protein_g),
       carbs_g: n(p.carbs_g),
       fat_g: n(p.fat_g),
+      fiber_g: n(p.fiber_g),
       foods_used: Array.isArray(p.foods_used) ? p.foods_used.filter((x): x is string => typeof x === "string") : [],
     };
   });

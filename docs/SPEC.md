@@ -123,12 +123,12 @@ rows and files for good.
 
 ## 4. Data model (D1)
 
-> **Tier:** Contract · **Verified:** 2026-10-21 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-23 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
 > `batches`, `analyses`, `foods` and `notes` (0006), `questions` (0008), `photos.taken_at` (0009),
-> `voice_notes` (0010).
+> `voice_notes` (0010), `foods.fiber_g` (0011).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -199,12 +199,12 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 
 ## 6. Prompt and reply contract
 
-> **Tier:** Contract · **Verified:** 2026-10-21 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-23 · **Expires:** 2027-04-17
 >
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/6`)
+### Prompt (`prompt/7`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -231,6 +231,8 @@ code can't say:
   "Questions already asked". The model folds the answers into its one reply; nothing is
   re-analyzed. The reply's `asked` list goes into the `questions` table (migration 0008),
   which feeds that block in every later prompt (newest 60).
+- Estimates include fiber since `prompt/7`: per meal, per remembered food, and as a daily
+  average in the trend (D22).
 
 ### Reply (`bitebook.reply/1`) and import
 
@@ -250,6 +252,8 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
   self-report in `batches.reply_model_reported`. Models misname themselves often enough
   that the self-report is never the record on its own (D17).
 - A skipped meal gets an analysis row with `skipped = 1` and stays ready to analyze.
+- `fiber_g` is optional (D22): replies from before `prompt/7`, or from a model that leaves
+  it out, still import, with fiber unknown.
 - `asked` is history, not data the estimates depend on, so it never fails an import: a
   malformed list counts as no questions, and an echoed sample is ignored.
 
@@ -339,8 +343,8 @@ API" on a batch, and:
 
 > **Tier:** Plan · **Verified:** 2026-10-23 · **Expires:** 2027-01-17
 
-*Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19), and
-voice notes (D21).
+*Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19),
+voice notes (D21) and fiber (D22).
 The remaining on-device checks for capture are in §7.*
 
 6. **Logging reminders.** If nothing has been logged for a day or two, send a push

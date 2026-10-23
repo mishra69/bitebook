@@ -60,6 +60,17 @@ describe("validateReply", () => {
   });
 });
 
+describe("fiber (prompt/7)", () => {
+  it("reads fiber on meals and remembered foods, and treats a reply without it as unknown", () => {
+    expect(parse(real).reply!.meals[0].fiber_g).toBeNull(); // the first real reply predates prompt/7
+    const add = { action: "add", code: null, name: "usual lassi shake", serving: "16 oz", kcal: 460, protein_g: 32, carbs_g: 65, fat_g: 8, fiber_g: 6, reason: "x" };
+    const { reply } = parse(edit((r) => { r.meals[0].fiber_g = 7.5; r.remember.push(add); }));
+    expect(reply!.meals[0].fiber_g).toBe(7.5);
+    expect(reply!.remember[0].fiber_g).toBe(6);
+    expect(parse(edit((r) => (r.meals[0].fiber_g = "lots"))).errors[0]).toContain("Meal A fiber_g must be a number");
+  });
+});
+
 describe("selfReportedModel (prompt/3)", () => {
   it("reads the model's claim about itself, and ignores unusable values", () => {
     expect(selfReportedModel({ model: "  claude-opus-5-5  " })).toBe("claude-opus-5-5");

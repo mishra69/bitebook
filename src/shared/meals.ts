@@ -54,6 +54,7 @@ export type Analysis = {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  fiber_g: number | null; // only from prompt/7 on
   confidence: "low" | "medium" | "high" | null;
   comment: string | null;
   foods_used: string[];

@@ -8,7 +8,8 @@ import type { MealType } from "./meals";
 // prompt/4 (2026-10-18): up to 2 questions in the chat before the JSON, never repeated (D18).
 // prompt/5 (2026-10-21): each photo's own time, and helpings counted separately (D19).
 // prompt/6 (2026-10-21): a meal's voice note, as transcribed text (D21).
-export const PROMPT_VERSION = "prompt/6";
+// prompt/7 (2026-10-23): fiber, per meal and per remembered food (D22).
+export const PROMPT_VERSION = "prompt/7";
 export const MAX_QUESTIONS = 2;
 export const ASKED_MAX_LINES = 60;
 export const REPLY_SCHEMA = "bitebook.reply/1";
@@ -23,6 +24,7 @@ export type RememberedFood = {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  fiber_g: number | null;
 };
 
 export type DigestEntry = {
@@ -33,10 +35,11 @@ export type DigestEntry = {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  fiber_g: number | null;
   foods_used: string[];
 };
 
-export type Trend = { days: number; kcal: number | null; protein_g: number | null };
+export type Trend = { days: number; kcal: number | null; protein_g: number | null; fiber_g: number | null };
 
 export type AskedQuestion = { topic: string; question: string; answer: string | null; asked_at: string };
 
@@ -66,9 +69,11 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 // The weekday of the local calendar date in taken_at (independent of the server's zone).
 const weekday = (iso: string) => WEEKDAYS[new Date(iso.slice(0, 10) + "T12:00:00Z").getUTCDay()];
 const num = (n: number | null) => (n === null ? "?" : String(Math.round(n * 10) / 10));
+// Fiber came in with prompt/7; older estimates simply don't have it.
+const fiber = (n: number | null) => (n === null ? "" : ` fiber ${num(n)}`);
 
 export function foodLine(f: RememberedFood): string {
-  return `[${f.code}] ${f.name} · ${f.serving} · ${num(f.kcal)} kcal · P${num(f.protein_g)} C${num(f.carbs_g)} F${num(f.fat_g)}`;
+  return `[${f.code}] ${f.name} · ${f.serving} · ${num(f.kcal)} kcal · P${num(f.protein_g)} C${num(f.carbs_g)} F${num(f.fat_g)}${fiber(f.fiber_g)}`;
 }
 
 export function digestLine(e: DigestEntry): string {
@@ -76,7 +81,7 @@ export function digestLine(e: DigestEntry): string {
   const codes = e.foods_used.length ? ` [${e.foods_used.join(", ")}]` : "";
   return (
     `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(8, 10)} ${weekday(d)} ${d.slice(11, 16)} ${e.meal_type ?? "meal"}` +
-    ` · ${e.description} · ~${num(e.kcal)} kcal · P${num(e.protein_g)} C${num(e.carbs_g)} F${num(e.fat_g)}${codes}`
+    ` · ${e.description} · ~${num(e.kcal)} kcal · P${num(e.protein_g)} C${num(e.carbs_g)} F${num(e.fat_g)}${fiber(e.fiber_g)}${codes}`
   );
 }
 
@@ -84,9 +89,23 @@ export function digestLine(e: DigestEntry): string {
 export function computeTrend(entries: DigestEntry[], now: number): Trend {
   const recent = entries.filter((e) => now - Date.parse(e.taken_at) < 7 * 86_400_000);
   const days = new Set(recent.map((e) => e.taken_at.slice(0, 10))).size;
-  if (days === 0) return { days: 0, kcal: null, protein_g: null };
+  if (days === 0) return { days: 0, kcal: null, protein_g: null, fiber_g: null };
   const sum = (k: "kcal" | "protein_g") => recent.reduce((s, e) => s + (e[k] ?? 0), 0);
-  return { days, kcal: Math.round(sum("kcal") / days), protein_g: Math.round(sum("protein_g") / days) };
+  // Fiber averages only over days whose meals all have it, so estimates from before
+  // prompt/7 don't drag it down.
+  const fiberDays = new Map<string, number | null>();
+  for (const e of recent) {
+    const d = e.taken_at.slice(0, 10);
+    const sofar = fiberDays.has(d) ? fiberDays.get(d)! : 0;
+    fiberDays.set(d, sofar === null || e.fiber_g === null ? null : sofar + e.fiber_g);
+  }
+  const fiberTotals = [...fiberDays.values()].filter((v): v is number => v !== null);
+  return {
+    days,
+    kcal: Math.round(sum("kcal") / days),
+    protein_g: Math.round(sum("protein_g") / days),
+    fiber_g: fiberTotals.length ? Math.round(fiberTotals.reduce((a, b) => a + b, 0) / fiberTotals.length) : null,
+  };
 }
 
 export const REPLY_EXAMPLE = {
@@ -103,6 +122,7 @@ export const REPLY_EXAMPLE = {
       protein_g: 22,
       carbs_g: 70,
       fat_g: 16,
+      fiber_g: 9,
       confidence: "medium",
       foods_used: ["F1"],
       comment: "Looks like about 1 tsp ghee on the dal.",
@@ -118,6 +138,7 @@ export const REPLY_EXAMPLE = {
       protein_g: 14,
       carbs_g: 36,
       fat_g: 9,
+      fiber_g: 6,
       reason: "Same dish in 6 of the last 30 days.",
     },
   ],
@@ -161,7 +182,7 @@ export function buildPrompt(p: PromptInput): string {
     })
     .join("\n");
   const trend = p.trend.days
-    ? `Last 7 days: ${p.trend.days} day${p.trend.days === 1 ? "" : "s"} logged · avg ${p.trend.kcal} kcal/day · protein ${p.trend.protein_g} g/day`
+    ? `Last 7 days: ${p.trend.days} day${p.trend.days === 1 ? "" : "s"} logged · avg ${p.trend.kcal} kcal/day · protein ${p.trend.protein_g} g/day${p.trend.fiber_g === null ? "" : ` · fiber ${p.trend.fiber_g} g/day`}`
     : "Last 7 days: nothing analyzed yet";
 
   return `You are helping me keep an approximate food log from photos. Rough, consistent
@@ -190,8 +211,8 @@ ${meals}
    ${MAX_QUESTIONS}, together in one message, then wait for my answers before writing the JSON.
    Never ask anything listed under "Questions already asked". If I skip a question or
    don't know, use your best assumption and say so in the comment.
-1. For each meal: describe it in a few words and estimate kcal, protein, carbs and fat
-   for what was eaten. If a nutrition label or package is visible, use it. When you
+1. For each meal: describe it in a few words and estimate kcal, protein, carbs, fat and
+   fiber (grams) for what was eaten. If a nutrition label or package is visible, use it. When you
    recognize a remembered food, use its values and list its code in foods_used. Stay
    consistent with how similar meals in the last ${DIGEST_DAYS} days were estimated. If a photo is
    unusable, set skipped to true and say why in skip_reason.

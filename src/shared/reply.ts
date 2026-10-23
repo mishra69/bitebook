@@ -14,6 +14,7 @@ export type MealResult = {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  fiber_g: number | null; // asked for since prompt/7; null in older replies
   confidence: (typeof CONFIDENCES)[number] | null;
   foods_used: string[];
   comment: string | null;
@@ -28,6 +29,7 @@ export type RememberChange = {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  fiber_g: number | null;
   reason: string | null;
 };
 
@@ -136,6 +138,7 @@ export function validateReply(raw: unknown, batch: BatchFacts): { reply: Reply |
         protein_g: num(m.protein_g, `${at} protein_g`),
         carbs_g: num(m.carbs_g, `${at} carbs_g`),
         fat_g: num(m.fat_g, `${at} fat_g`),
+        fiber_g: num(m.fiber_g, `${at} fiber_g`),
         confidence: confidence as MealResult["confidence"],
         foods_used: codes(m.foods_used, `${at} foods_used`),
         comment: str(m.comment),
@@ -168,6 +171,7 @@ export function validateReply(raw: unknown, batch: BatchFacts): { reply: Reply |
       protein_g: num(r.protein_g, `${at} protein_g`),
       carbs_g: num(r.carbs_g, `${at} carbs_g`),
       fat_g: num(r.fat_g, `${at} fat_g`),
+      fiber_g: num(r.fiber_g, `${at} fiber_g`),
       reason: str(r.reason),
     });
   }

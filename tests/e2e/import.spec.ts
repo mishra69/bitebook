@@ -30,7 +30,7 @@ test("a pasted reply becomes analyses on the meals, and the batch's summary is s
   const batchId = (await (await request.get("/api/batches?status=open")).json()).batches[0].id;
 
   // Chat apps wrap the JSON in a fence and add a sentence or two: that must still import.
-  const pasted = "Here's the analysis:\n\n```json\n" + JSON.stringify(replyFor(batchId), null, 2) + "\n```\nHope that helps!";
+  const pasted = "Here's the analysis:\n\n```json\n" + JSON.stringify(replyFor(batchId, (r) => (r.meals[0].fiber_g = 7)), null, 2) + "\n```\nHope that helps!";
   await card.locator("textarea").fill(pasted);
   await card.getByPlaceholder(/Claude/).fill("Claude Opus (Claude app)");
   await card.getByRole("button", { name: "Import reply" }).click();
@@ -42,9 +42,9 @@ test("a pasted reply becomes analyses on the meals, and the batch's summary is s
 
   await page.goto("/#/timeline");
   const curry = page.locator(".meal", { hasText: "curry night" });
-  await expect(curry.locator(".meal-analysis")).toContainText("tomato-cream curry with chicken or paneer cubes, no rice · ~400 kcal · P25");
+  await expect(curry.locator(".meal-analysis")).toContainText("tomato-cream curry with chicken or paneer cubes, no rice · ~400 kcal · P25 · fiber 7");
   await curry.locator("a.meal-link").click();
-  await expect(page.locator(".analysis")).toContainText("protein 25 g · carbs 18 g · fat 25 g");
+  await expect(page.locator(".analysis")).toContainText("protein 25 g · carbs 18 g · fat 25 g · fiber 7 g");
   await expect(page.locator(".analysis")).toContainText("Claude Opus (Claude app)");
   await expect(page.locator(".analysis")).toContainText("low confidence");
 });
@@ -98,7 +98,7 @@ test("remembered foods and notes carry into the next batch's prompt, and can be 
   const b = await seedMeal(request, "2026-10-14T19:00:00-05:00", "memory B");
   const first = (await (await request.post("/api/batches", { data: { meal_ids: [a, b] } })).json()).batch.id;
   const reply = replyFor(first, (r) =>
-    r.remember.push({ action: "add", code: null, name: "usual lassi shake", serving: "16 oz", kcal: 460, protein_g: 32, carbs_g: 65, fat_g: 8, reason: "recurring" }),
+    r.remember.push({ action: "add", code: null, name: "usual lassi shake", serving: "16 oz", kcal: 460, protein_g: 32, carbs_g: 65, fat_g: 8, fiber_g: 6, reason: "recurring" }),
   );
   const imported = await (await request.post(`/api/batches/${first}/import`, { data: { reply: JSON.stringify(reply), model: "test model" } })).json();
   const code = imported.remembered[0].code;
@@ -106,6 +106,7 @@ test("remembered foods and notes carry into the next batch's prompt, and can be 
 
   await openApp(page, "#/memory");
   await expect(page.locator(".memory .meal", { hasText: code })).toContainText("usual lassi shake");
+  await expect(page.locator(".memory .meal", { hasText: code })).toContainText("fiber 6 g");
   await page.getByPlaceholder("Add a note…").fill("My lassi shake: 1 cup 2% yogurt, 1 banana, 1 scoop whey.");
   await page.getByRole("button", { name: "Add note" }).click();
   await expect
@@ -115,7 +116,7 @@ test("remembered foods and notes carry into the next batch's prompt, and can be 
   const c = await seedMeal(request, "2026-10-18T09:00:00-05:00", "memory C");
   let prompt = (await (await request.post("/api/batches", { data: { meal_ids: [c] } })).json()).batch.prompt as string;
   expect(prompt).toMatch(/Notes: [^]*My lassi shake: 1 cup 2% yogurt, 1 banana, 1 scoop whey\./);
-  expect(prompt).toContain(`[${code}] usual lassi shake · 16 oz · 460 kcal`);
+  expect(prompt).toContain(`[${code}] usual lassi shake · 16 oz · 460 kcal · P32 C65 F8 fiber 6`);
   expect(prompt).toContain("tomato-cream curry with chicken or paneer cubes, no rice · ~400 kcal"); // digest of meal A
   expect(prompt).toContain("suggest I add it to my notes in Bitebook");
 

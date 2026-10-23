@@ -55,6 +55,7 @@ export function MealRow({ row }: { row: Row }) {
         <p class="meal-analysis">
           {row.meal.analysis.description} · <strong>~{Math.round(row.meal.analysis.kcal ?? 0)} kcal</strong>
           {row.meal.analysis.protein_g !== null && ` · P${Math.round(row.meal.analysis.protein_g)}`}
+          {row.meal.analysis.fiber_g !== null && ` · fiber ${Math.round(row.meal.analysis.fiber_g)}`}
         </p>
       )}
       {row.meal.note && <p class="meal-note">{row.meal.note}</p>}

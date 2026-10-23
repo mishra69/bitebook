@@ -11,6 +11,7 @@ type Food = {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  fiber_g: number | null;
   status: "active" | "retired";
 };
 
@@ -88,6 +89,7 @@ export function Memory() {
             </div>
             <p class="muted small">
               {f.serving} · {n(f.kcal)} kcal · P{n(f.protein_g)} C{n(f.carbs_g)} F{n(f.fat_g)}
+              {f.fiber_g !== null && ` · fiber ${n(f.fiber_g)} g`}
             </p>
           </li>
         ))}

@@ -283,3 +283,16 @@ most 60 seconds long, typically describing each helping just before saving.
 
 Open risks, for the iPhone: home-screen web apps may ask for the microphone on every
 launch, and leaving the app ends a recording early (what was said is kept).
+
+## D22 · 2026-10-23 · Fiber
+
+The user wants a fiber count. Every estimate now includes `fiber_g` (grams), per meal and
+per remembered food (`prompt/7`, migration 0011). It's an optional field in
+`bitebook.reply/1`, not a new reply version: a reply without it still imports, and its
+fiber counts as unknown. That keeps older replies, and models that ignore the field,
+valid.
+
+- Older analyses aren't backfilled, since there's no re-analysis (D18). The digest shows
+  fiber only where an estimate has it.
+- The 7-day trend averages fiber only over days whose meals all have it, so a day that
+  was half before `prompt/7` can't drag the average down.
