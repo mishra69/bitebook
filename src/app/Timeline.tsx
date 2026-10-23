@@ -48,6 +48,7 @@ export function Timeline({ userId }: { userId: string }) {
   const days = groupByDay(meals);
   return (
     <section class="timeline" aria-label="Timeline">
+      <a class="button wide missed-link" href="#/missed">＋ Add a meal I missed</a>
       {local.length > 0 && (
         <>
           <h2 class="section-title">Not uploaded yet</h2>

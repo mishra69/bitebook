@@ -22,7 +22,7 @@ export type NewMeal = {
   tz: string; // IANA zone
   meal_type: MealType | null;
   note: string | null;
-  photos: NewPhoto[];
+  photos: NewPhoto[]; // empty for a meal added afterwards from a description (D24)
   voice?: NewVoice; // uploaded beforehand, like the photos
 };
 

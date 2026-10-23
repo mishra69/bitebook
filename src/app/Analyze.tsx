@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { Meal } from "../shared/meals";
 import { extractJson, selfReportedModel } from "../shared/reply";
-import { mealLabel } from "./MealRow";
+import { NoPhoto, mealLabel } from "./MealRow";
 import { mealsChanged, onMealsChanged, showToast } from "./lib/notify";
 import { timeOfDay } from "./lib/time";
 
@@ -111,10 +111,10 @@ export function Analyze() {
               <li key={m.id} class="meal">
                 <label class="pick-row">
                   <input type="checkbox" checked={selected.has(m.id)} onChange={() => toggle(m.id)} />
-                  <img class="thumb small" src={`/api/photos/${m.photos[0]?.id}/display`} alt="" loading="lazy" />
+                  {m.photos.length ? <img class="thumb small" src={`/api/photos/${m.photos[0].id}/display`} alt="" loading="lazy" /> : <NoPhoto small />}
                   <span>
                     <strong>{m.taken_at.slice(5, 10).replace("-", "/")} {timeOfDay(m.taken_at)}</strong> {m.meal_type ?? "meal"}
-                    <span class="muted small"> · {m.photos.length} photo{m.photos.length === 1 ? "" : "s"}</span>
+                    <span class="muted small"> · {m.photos.length ? `${m.photos.length} photo${m.photos.length === 1 ? "" : "s"}` : "no photo"}</span>
                     {m.note && <span class="muted small"><br />{m.note}</span>}
                   </span>
                 </label>
@@ -323,8 +323,8 @@ function BatchCard({ batch, onAbandon, onImported }: { batch: BatchView; onAband
           <button class="button" onClick={copy}>{copied ? "Prompt copied ✓" : "Copy prompt"}</button>
         </li>
         <li>
-          <button class="button" disabled={files === null} onClick={share}>
-            {files === null ? "Preparing photos…" : canShare ? "Share photos" : "Download photos"}
+          <button class="button" disabled={files === null || all.length === 0} onClick={share}>
+            {all.length === 0 ? "No photos in this batch" : files === null ? "Preparing photos…" : canShare ? "Share photos" : "Download photos"}
           </button>
           <span class="muted small"> to your chat app (e.g. Claude), then paste the prompt with them.</span>
         </li>
@@ -336,7 +336,7 @@ function BatchCard({ batch, onAbandon, onImported }: { batch: BatchView; onAband
       <div class="thumbs">
         {batch.entries.map((e) => (
           <figure key={e.key} class="thumb keyed" title={mealLabel(e.meal.taken_at, e.meal.meal_type)}>
-            <img src={`/api/photos/${e.files[0]?.photo_id}/display`} alt="" loading="lazy" />
+            {e.files.length ? <img src={`/api/photos/${e.files[0].photo_id}/display`} alt="" loading="lazy" /> : <NoPhoto />}
             <figcaption>{e.key}</figcaption>
           </figure>
         ))}

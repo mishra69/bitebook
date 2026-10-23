@@ -290,7 +290,9 @@ function validate(m: NewMeal | null): string | null {
   if (typeof m.tz !== "string" || m.tz.length === 0 || m.tz.length > 64) return "tz";
   if (m.meal_type !== null && !MEAL_TYPES.includes(m.meal_type)) return "meal_type";
   if (m.note !== null && (typeof m.note !== "string" || m.note.length > MAX_NOTE)) return "note";
-  if (!Array.isArray(m.photos) || m.photos.length === 0 || m.photos.length > MAX_PHOTOS) return "photos";
+  if (!Array.isArray(m.photos) || m.photos.length > MAX_PHOTOS) return "photos";
+  // A meal added afterwards may have no photo (D24); then its description is all there is.
+  if (m.photos.length === 0 && m.voice === undefined && !m.note?.trim()) return "photos";
   const ids = new Set<string>();
   for (const p of m.photos) {
     if (!isUlid(p.id) || ids.has(p.id)) return "photo.id";

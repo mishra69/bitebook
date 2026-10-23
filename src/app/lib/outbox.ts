@@ -34,6 +34,9 @@ export type OutboxMeal = {
   savedAt?: number; // when Save was tapped (epoch ms), to time the whole upload
   voice?: OutboxVoice; // one spoken note per meal (D21)
   error?: string; // set when the server rejected it; it then waits for the user
+  // Added afterwards without a photo (D24): which day it was, 0 = today. Its takenAt is
+  // that day at the meal type's usual hour.
+  missed?: { daysAgo: number };
   // Still being composed. Kept here from the first photo so an iOS reload while the
   // camera is open loses nothing; never uploaded until it's saved.
   draft?: boolean;

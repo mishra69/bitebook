@@ -66,4 +66,8 @@ test("the API refuses bad uploads and incomplete meals", async ({ request }) => 
   expect(missing.status()).toBe(409); // the display copy was never uploaded
   expect((await missing.json()).missing).toEqual([`${id}/display`]);
   expect((await request.post("/api/meals", { data: { ...meal, meal_type: "brunch" } })).status()).toBe(400);
+  // No photo is allowed only with a description (D24).
+  const bare = await request.post("/api/meals", { data: { ...meal, photos: [] } });
+  expect(bare.status()).toBe(400);
+  expect((await bare.json()).detail).toBe("photos");
 });

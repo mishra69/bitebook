@@ -108,7 +108,7 @@ export function App() {
           </nav>
           {route.name === "today" && (
             <>
-              <Capture userId={user.id} />
+              <Capture userId={user.id} missed={route.missed} />
               <MealList userId={user.id} />
             </>
           )}

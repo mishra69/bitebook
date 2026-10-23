@@ -8,10 +8,11 @@ built, and **Plan** sections expire.
 
 ## 1. Purpose and principles
 
-> **Tier:** Core · **Verified:** 2026-10-18
+> **Tier:** Core · **Verified:** 2026-10-23
 
 Bitebook logs a photo of every meal with as little friction as possible, so that the
-logging actually happens. It also builds a durable, reusable corpus of meal photos with
+logging actually happens. A meal that wasn't photographed can be described afterwards
+instead (D24). It also builds a durable, reusable corpus of meal photos with
 model analyses and the user's corrections.
 
 1. **Capture is a few taps and needs no thinking.** Opening the app, taking a photo and saving
@@ -64,7 +65,7 @@ Laptop
 
 ## 3. Core flows
 
-> **Tier:** Core · **Verified:** 2026-10-21
+> **Tier:** Core · **Verified:** 2026-10-23
 
 **Capture.** Tap "New meal" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
@@ -83,6 +84,11 @@ A meal can have one **voice note** of up to a minute, recorded in the draft, for
 describe each helping before saving. The server transcribes it with Whisper (Workers
 AI), and the prompt carries the transcript. The transcript isn't editable: if it's often
 wrong, the fix is a better transcriber, not hand-editing (D21).
+
+**A meal missed.** From Timeline, "Add a meal I missed" opens a draft without a photo:
+pick the day (today or yesterday) and the meal type, and describe it in a voice note or
+a note. It gets that meal type's usual hour, and the prompt tells the model it's a
+description only (D24).
 
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
@@ -205,7 +211,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/7`)
+### Prompt (`prompt/8`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -232,6 +238,9 @@ code can't say:
   "Questions already asked". The model folds the answers into its one reply; nothing is
   re-analyzed. The reply's `asked` list goes into the `questions` table (migration 0008),
   which feeds that block in every later prompt (newest 60).
+- A meal without a photo (D24) is listed as "no photo (added afterwards from my
+  description)" with its time as "~13:00", and the model is told to estimate from the
+  words alone and lower its confidence.
 - Estimates include fiber since `prompt/7`: per meal, per remembered food, and as a daily
   average in the trend (D22).
 
@@ -271,6 +280,9 @@ microphone again on later launches of the home-screen app; nothing in the app ca
 that.
 
 Still to check, then delete this section:
+
+- **A missed meal:** Timeline → "Add a meal I missed", record a note, save. Does the
+  reply estimate it sensibly from the words alone?
 
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
   should be saved, with a note saying so.

@@ -149,3 +149,14 @@ describe("fiber (prompt/7)", () => {
     expect(t.fiber_g).toBe(20);
   });
 });
+
+describe("meals without a photo (prompt/8)", () => {
+  it("marks the meal and its approximate time, and says how to estimate it", () => {
+    const p = buildPrompt({
+      batchId: "01B", notes: [], foods: [], digest: [], asked: [], trend: { days: 0, kcal: null, protein_g: null, fiber_g: null },
+      meals: [{ key: "A", taken_at: "2026-10-22T13:00:00-05:00", meal_type: "lunch", note: null, photos: [], voice: { transcript: "two rotis and dal" } }],
+    });
+    expect(p).toContain("[A] Thu 2026-10-22 ~13:00 · lunch · no photo (added afterwards from my description)\nNote: —\nVoice note (my words, transcribed): two rotis and dal");
+    expect(p).toContain("A meal with no photo is one I forgot to photograph");
+  });
+});

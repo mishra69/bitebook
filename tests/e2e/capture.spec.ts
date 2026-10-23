@@ -185,3 +185,42 @@ test("a voice note can be removed from the draft, and over-long ones are refused
   expect(res.status()).toBe(400);
   expect((await res.json()).detail).toBe("voice.duration");
 });
+
+test("a missed meal is added from Timeline with a voice note and no photo, and goes into the next prompt", async ({ page, request }) => {
+  await openApp(page, "#/timeline");
+  await page.getByRole("link", { name: "＋ Add a meal I missed" }).click();
+  await expect(page.locator(".draft .missed-intro")).toContainText("A meal you missed");
+  await expect(page.locator(".draft figure.thumb")).toHaveCount(0);
+  const save = page.getByRole("button", { name: "Save meal" });
+  await expect(save).toBeDisabled(); // needs a meal type and a description
+
+  await page.getByRole("radio", { name: "Yesterday" }).click();
+  await page.getByRole("radio", { name: "lunch" }).click();
+  await page.locator(".draft .note").fill("missed lunch");
+  await page.getByRole("button", { name: /Add a voice note/ }).click();
+  await page.waitForTimeout(1500);
+  await page.locator(".voice.recording").click();
+  await expect(page.locator(".voice.saved")).toBeVisible();
+  await page.reload(); // kept on the phone like any draft
+  await expect(page.getByRole("radio", { name: "Yesterday" })).toHaveAttribute("aria-checked", "true");
+  await save.click();
+
+  const meal = await serverMeal(request, "missed lunch");
+  expect(meal.photos).toEqual([]);
+  expect(meal.meal_type).toBe("lunch");
+  const ymd = await page.evaluate(() => { // yesterday, on the phone's calendar
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  expect(meal.taken_at.slice(0, 16)).toBe(`${ymd}T13:00`);
+
+  await page.goto("/#/timeline");
+  await expect(page.locator(".meal", { hasText: "missed lunch" }).locator(".no-photo")).toHaveCount(1);
+  for (const b of (await (await request.get("/api/batches?status=open")).json()).batches) await request.post(`/api/batches/${b.id}/abandon`);
+  const res = await request.post("/api/batches", { data: { meal_ids: [meal.id] } });
+  expect(res.status()).toBe(201);
+  const { batch } = await res.json();
+  expect(batch.prompt).toContain(`~13:00 · lunch · no photo (added afterwards from my description)\nNote: missed lunch\nVoice note`);
+  await request.post(`/api/batches/${batch.id}/abandon`);
+});

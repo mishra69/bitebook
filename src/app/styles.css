@@ -124,6 +124,11 @@ ul { margin: 0; padding-left: 1.2rem; }
 .push { margin-left: auto; }
 .small { font-size: 0.8rem; }
 .thumb.small { width: 44px; height: 44px; }
+/* A meal added afterwards without a photo (D24). */
+.thumb.no-photo { display: grid; place-items: center; font-size: 1.6rem; border: 1px dashed var(--muted); background: none; }
+.thumb.no-photo.small { font-size: 1.1rem; }
+.missed-intro { margin: 0; }
+.missed-link { text-align: center; margin-top: 0; }
 .meals.deleted { margin-top: 0.5rem; }
 /* Sits just above the bottom bar. */
 .toast {

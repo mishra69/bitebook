@@ -8,6 +8,13 @@ export type Row = { kind: "server"; meal: Meal } | { kind: "local"; meal: Outbox
 
 export const rowTakenAt = (r: Row) => (r.kind === "local" ? r.meal.takenAt : r.meal.taken_at);
 
+// Stands in for the photo of a meal added afterwards from a description (D24).
+export const NoPhoto = ({ small }: { small?: boolean }) => (
+  <span class={"thumb no-photo" + (small ? " small" : "")} title="Added without a photo" aria-label="No photo">
+    🎙
+  </span>
+);
+
 export const mealLabel = (takenAt: string, type: string | null) => `${timeOfDay(takenAt)} ${type ?? "meal"}`;
 
 // One meal in a list. Saved meals open their detail screen; meals still on the phone
@@ -50,6 +57,7 @@ export function MealRow({ row }: { row: Row }) {
         {urls.map((u) => (
           <img key={u} class="thumb" src={u} alt="" loading="lazy" />
         ))}
+        {urls.length === 0 && <NoPhoto />}
       </div>
       {row.kind === "server" && row.meal.analysis && (
         <p class="meal-analysis">

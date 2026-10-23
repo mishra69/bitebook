@@ -9,7 +9,8 @@ import type { MealType } from "./meals";
 // prompt/5 (2026-10-21): each photo's own time, and helpings counted separately (D19).
 // prompt/6 (2026-10-21): a meal's voice note, as transcribed text (D21).
 // prompt/7 (2026-10-23): fiber, per meal and per remembered food (D22).
-export const PROMPT_VERSION = "prompt/7";
+// prompt/8 (2026-10-23): meals added afterwards without a photo, from a description (D24).
+export const PROMPT_VERSION = "prompt/8";
 export const MAX_QUESTIONS = 2;
 export const ASKED_MAX_LINES = 60;
 export const REPLY_SCHEMA = "bitebook.reply/1";
@@ -174,9 +175,10 @@ export function buildPrompt(p: PromptInput): string {
         const later = Math.floor((Date.parse(ph.taken_at) - first) / 60_000);
         return `${photoFileName(m.key, ph.position, ph.taken_at)} (${ph.taken_at.slice(11, 16)}${later >= 1 ? `, +${later} min` : ""})`;
       });
+      const time = files.length ? m.taken_at.slice(11, 16) : `~${m.taken_at.slice(11, 16)}`;
       return (
-        `[${m.key}] ${weekday(m.taken_at)} ${m.taken_at.slice(0, 10)} ${m.taken_at.slice(11, 16)} · ${m.meal_type ?? "meal"}` +
-        ` · photos: ${files.join(", ")}\nNote: ${m.note?.trim() || "—"}` +
+        `[${m.key}] ${weekday(m.taken_at)} ${m.taken_at.slice(0, 10)} ${time} · ${m.meal_type ?? "meal"}` +
+        ` · ${files.length ? `photos: ${files.join(", ")}` : "no photo (added afterwards from my description)"}\nNote: ${m.note?.trim() || "—"}` +
         (m.voice ? `\nVoice note (my words, transcribed): ${m.voice.transcript?.trim() || "(recorded, but it couldn't be transcribed)"}` : "")
       );
     })
@@ -222,6 +224,9 @@ ${meals}
    additional servings: count what's on each one, and mention the number of helpings in
    the description. Photos within a minute or so of each other are usually the same
    plate from another angle: don't count it twice.
+   A meal with no photo is one I forgot to photograph and described afterwards: estimate
+   it from my words alone, assume typical portions for anything I didn't size, and
+   lower the confidence to match. Its time (~) is approximate.
 2. Changes to what I should remember: add a food when you read a label or see the same
    dish recurring in the last ${DIGEST_DAYS} days; update one whose values look off; retire one I
    seem to have stopped eating. "add" has code null; "update" and "retire" use an

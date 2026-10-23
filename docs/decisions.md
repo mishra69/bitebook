@@ -313,3 +313,22 @@ couldn't say whether the network was slow, requests timed out, or the app was pa
   purge. The phone deletes only what the server has confirmed.
 - **The app never shows it.** It's for reading with SQL when something goes wrong, so
   the user doesn't have to describe what happened.
+
+## D24 · 2026-10-23 · Meals added afterwards, without a photo
+
+Changes Core (§1, §3). Until now every meal was a photo. The user asked for a nightly
+check, "did you log everything?", with a way to say what was missed. A forgotten meal
+can't be photographed afterwards, so it's described instead.
+
+- **From Timeline, "Add a meal I missed"** opens a draft without a photo. The user picks
+  the day (today or yesterday) and the meal type, then records a voice note (or types a
+  note). A photo can still be added if there is one.
+- **Its time is the meal type's usual hour** (breakfast 8:30, lunch 13:00, snack 16:30,
+  dinner 19:30), so it sorts and digests in the right place. No time picker: an exact
+  time wouldn't change the estimate, and picking one is the kind of chore principle 10
+  rules out. The app shows it as "about 13:00", the prompt as "~13:00".
+- **The server accepts no photos only with a voice note or a note.** A meal with nothing
+  to estimate from is refused.
+- **`prompt/8`** marks such a meal as "no photo (added afterwards from my description)"
+  and tells the model to estimate from the words alone, assume typical portions, and
+  lower its confidence to match.

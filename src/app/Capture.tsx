@@ -6,7 +6,7 @@ import { isStaleDraft } from "./lib/drafts";
 import { preparePhoto, sha256Hex } from "./lib/image";
 import { formatDuration, startRecording, type Recording } from "./lib/voice";
 import { showToast } from "./lib/notify";
-import { timeOfDay } from "./lib/time";
+import { missedMealTime, timeOfDay } from "./lib/time";
 import { deleteMeal, getDraft, putMeal, sync, type OutboxMeal } from "./lib/outbox";
 import { deviceTz } from "./lib/time";
 
@@ -22,7 +22,7 @@ function suggestMealType(iso: string): MealType {
 // The draft is written to the outbox on every change (marked draft, so it isn't
 // uploaded), because iOS may reload the app while the camera is open. Saving clears
 // the draft flag; uploading then happens in the background.
-export function Capture({ userId }: { userId: string }) {
+export function Capture({ userId, missed }: { userId: string; missed?: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   const [draft, setDraftState] = useState<OutboxMeal | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -65,6 +65,32 @@ export function Capture({ userId }: { userId: string }) {
     clearTimeout(noteTimer.current);
     noteTimer.current = setTimeout(() => putMeal(next), 400);
   };
+
+  // Opened as #/missed (from Timeline): start a meal without a photo, unless one is
+  // already being composed. The hash goes back to #/ so a reload doesn't start another.
+  useEffect(() => {
+    if (!missed) return;
+    history.replaceState(null, "", "#/");
+    (async () => {
+      if (await getDraft(userId)) return;
+      await setDraft({
+        id: ulid(),
+        userId,
+        takenAt: missedMealTime(0, null),
+        tz: deviceTz(),
+        mealType: null,
+        note: null,
+        photos: [],
+        createdAt: new Date().toISOString(),
+        draft: true,
+        missed: { daysAgo: 0 },
+      });
+    })();
+  }, [missed, userId]);
+
+  // A missed meal's time follows its day and meal type.
+  const setMissed = (d: OutboxMeal, daysAgo: number, mealType: MealType | null) =>
+    setDraft({ ...d, mealType, missed: { daysAgo }, takenAt: missedMealTime(daysAgo, mealType) });
 
   const urls = useMemo(() => draft?.photos.map((p) => URL.createObjectURL(p.display)) ?? [], [draft?.photos]);
   useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
@@ -118,8 +144,12 @@ export function Capture({ userId }: { userId: string }) {
     }
   };
 
+  // Without a photo, the description is the whole meal: it needs a voice note or a note,
+  // and a meal type to place it in the day.
+  const missedIncomplete = !!draft && draft.photos.length === 0 && (!draft.mealType || (!draft.voice && !draft.note?.trim()));
+
   const save = async () => {
-    if (!draft) return;
+    if (!draft || missedIncomplete) return;
     clearTimeout(noteTimer.current);
     setBusy("Saving…");
     try {
@@ -137,7 +167,7 @@ export function Capture({ userId }: { userId: string }) {
   };
 
   const discard = async () => {
-    if (draft && draft.photos.length > 0 && !confirm("Discard this meal's photos?")) return;
+    if (draft && (draft.photos.length > 0 || draft.voice) && !confirm("Discard this meal?")) return;
     if (draft) await deleteMeal(draft.id);
     setDraftState(null);
   };
@@ -145,7 +175,7 @@ export function Capture({ userId }: { userId: string }) {
   const removePhoto = async (id: string) => {
     if (!draft) return;
     const photos = draft.photos.filter((p) => p.id !== id).map((p, position) => ({ ...p, position }));
-    if (photos.length) await setDraft({ ...draft, photos });
+    if (photos.length || draft.missed) await setDraft({ ...draft, photos });
     else {
       await deleteMeal(draft.id);
       setDraftState(null);
@@ -164,6 +194,26 @@ export function Capture({ userId }: { userId: string }) {
       />
       {draft && (
         <section class="card draft" aria-label="New meal">
+          {draft.missed && (
+            <>
+              <p class="missed-intro">
+                <strong>A meal you missed.</strong> Say what you ate and roughly how much; a photo is optional.
+              </p>
+              <div class="chips" role="radiogroup" aria-label="Day">
+                {["Today", "Yesterday"].map((label, daysAgo) => (
+                  <button
+                    key={label}
+                    role="radio"
+                    aria-checked={draft.missed!.daysAgo === daysAgo}
+                    class={"chip" + (draft.missed!.daysAgo === daysAgo ? " on" : "")}
+                    onClick={() => setMissed(draft, daysAgo, draft.mealType)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <div class="thumbs">
             {draft.photos.map((p, i) => (
               <figure key={p.id} class="thumb">
@@ -180,7 +230,11 @@ export function Capture({ userId }: { userId: string }) {
                 role="radio"
                 aria-checked={draft.mealType === t}
                 class={"chip" + (draft.mealType === t ? " on" : "")}
-                onClick={() => setDraft({ ...draft, mealType: draft.mealType === t ? null : t })}
+                onClick={() => {
+                  const mealType = draft.mealType === t ? null : t;
+                  if (draft.missed && draft.photos.length === 0) setMissed(draft, draft.missed.daysAgo, mealType);
+                  else setDraft({ ...draft, mealType });
+                }}
               >
                 {t}
               </button>
@@ -206,6 +260,7 @@ export function Capture({ userId }: { userId: string }) {
             onError={setError}
             onRecordingChange={(on) => setBusy(on ? "Recording…" : null)}
           />
+          {missedIncomplete && <p class="muted small">To save it, pick a meal type and add a voice note or a note.</p>}
         </section>
       )}
       {error && <p class="bad">{error}</p>}
@@ -215,7 +270,7 @@ export function Capture({ userId }: { userId: string }) {
         ) : draft ? (
           <>
             <button class="secondary" onClick={discard}>Discard</button>
-            <button class="primary" onClick={save}>Save meal</button>
+            <button class="primary" onClick={save} disabled={missedIncomplete}>Save meal</button>
           </>
         ) : (
           <button class="primary big" onClick={openCamera}>New meal</button>

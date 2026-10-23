@@ -32,12 +32,14 @@ export function MealDetail({ id }: { id: string }) {
         ← Back
       </button>
       <h2>
-        {date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} · {timeOfDay(meal.taken_at)}
+        {date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} · {meal.photos.length ? "" : "about "}
+        {timeOfDay(meal.taken_at)}
       </h2>
       <p>
         {meal.meal_type && <span class="chip on small">{meal.meal_type}</span>}
         <span class="muted small"> {meal.tz}</span>
       </p>
+      {meal.photos.length === 0 && <p class="muted small">Added afterwards without a photo; the time is the meal's usual hour.</p>}
       <div class="detail-photos">
         {meal.photos.map((p) => (
           <img key={p.id} src={`/api/photos/${p.id}/display`} alt="" width={p.width ?? undefined} height={p.height ?? undefined} />

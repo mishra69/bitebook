@@ -26,3 +26,14 @@ export function startOfToday(): number {
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 }
+
+// A meal added afterwards without a photo has no real time, only a day and a meal type
+// (D24). It gets that meal's usual hour, so it sorts and digests in the right place.
+const USUAL_HOUR: Record<string, [number, number]> = { breakfast: [8, 30], lunch: [13, 0], snack: [16, 30], dinner: [19, 30] };
+export function missedMealTime(daysAgo: number, mealType: string | null, now = new Date()): string {
+  const d = new Date(now);
+  d.setDate(d.getDate() - daysAgo);
+  const [h, m] = mealType ? USUAL_HOUR[mealType] : [d.getHours(), d.getMinutes()];
+  d.setHours(h, m, 0, 0);
+  return localIso(d);
+}
