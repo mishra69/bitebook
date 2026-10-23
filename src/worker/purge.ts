@@ -7,6 +7,8 @@ const BATCH = 100;
 
 export async function purgeDeleted(env: Env, now = Date.now()): Promise<number> {
   const cutoff = new Date(now - PURGE_AFTER_DAYS * 86_400_000).toISOString();
+  // The phone's diagnostics log is only for recent trouble (D23).
+  await env.DB.prepare("DELETE FROM diag_events WHERE t_ms < ?1").bind(now - PURGE_AFTER_DAYS * 86_400_000).run();
   let purged = 0;
   for (;;) {
     const { results: meals } = await env.DB.prepare(

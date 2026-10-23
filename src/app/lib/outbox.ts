@@ -1,4 +1,5 @@
 import type { MealType, NewMeal } from "../../shared/meals";
+import { diag, flushDiag } from "./diag";
 
 // Meals waiting to reach the server. A meal is written here the moment it's saved, so
 // capture works offline and survives the app being closed; it is deleted only after
@@ -30,6 +31,7 @@ export type OutboxMeal = {
   note: string | null;
   photos: OutboxPhoto[];
   createdAt: string;
+  savedAt?: number; // when Save was tapped (epoch ms), to time the whole upload
   voice?: OutboxVoice; // one spoken note per meal (D21)
   error?: string; // set when the server rejected it; it then waits for the user
   // Still being composed. Kept here from the first photo so an iOS reload while the
@@ -120,12 +122,24 @@ export function startSync(userId: string) {
   currentUser = userId;
   if (!startSync.wired) {
     startSync.wired = true;
-    window.addEventListener("online", () => restartSync());
+    window.addEventListener("online", () => {
+      diag("online");
+      restartSync();
+    });
+    window.addEventListener("offline", () => diag("offline"));
     // iOS freezes a backgrounded web app, often mid-upload. A request frozen that way may
     // never settle, so on return abandon it and start over: every step is idempotent.
-    document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && restartSync());
-    window.addEventListener("pageshow", () => restartSync());
+    document.addEventListener("visibilitychange", () => {
+      diag("visibility", { inflight: !!inflight });
+      if (document.visibilityState === "visible") restartSync();
+    });
+    window.addEventListener("pageshow", (e) => {
+      diag("pageshow", { persisted: e.persisted });
+      restartSync();
+    });
+    diag("start", { conn: (navigator as { connection?: { effectiveType?: string } }).connection?.effectiveType });
   }
+  flushDiag();
   return sync();
 }
 startSync.wired = false;
@@ -133,6 +147,7 @@ startSync.wired = false;
 let inflight: AbortController | null = null;
 
 function restartSync() {
+  if (inflight) abandoned.add(inflight);
   inflight?.abort();
   retryIndex = 0;
   return sync();
@@ -152,6 +167,7 @@ export function sync(): Promise<void> {
           uploadingId = meal.id;
           await uploadMeal(meal);
           await deleteMeal(meal.id);
+          diag("meal_done", { meal: meal.id, sinceSaveMs: meal.savedAt ? Date.now() - meal.savedAt : null });
         } catch (e) {
           // Deleted mid-upload (its request was aborted): move on to the next meal.
           if (e instanceof Removed || !(await getMeal(meal.id))) continue;
@@ -163,12 +179,15 @@ export function sync(): Promise<void> {
       }
       retryIndex = 0;
       changed({ offline: false, signedOut: false, lastError: null });
+      setTimeout(flushDiag, 2_000); // after this pass's own events are written
     } catch (e) {
       if (e instanceof SignedOut) {
         changed({ signedOut: true });
       } else {
         changed({ offline: e instanceof Offline, lastError: e instanceof Offline ? null : String((e as Error).message ?? e) });
-        retryTimer = setTimeout(() => sync(), RETRY_DELAYS[Math.min(retryIndex++, RETRY_DELAYS.length - 1)]);
+        const delay = RETRY_DELAYS[Math.min(retryIndex++, RETRY_DELAYS.length - 1)];
+        diag("retry_scheduled", { delayMs: delay, error: String((e as Error).message ?? e) });
+        retryTimer = setTimeout(() => sync(), delay);
       }
     } finally {
       running = null;
@@ -263,19 +282,32 @@ async function uploadMeal(meal: OutboxMeal) {
 // would otherwise block every later upload.
 const timeoutFor = (body: BodyInit | null | undefined) => 20_000 + (body instanceof Blob ? body.size / 100 : 0);
 
+// Requests aborted because the app came back from the background (not timed out).
+const abandoned = new WeakSet<AbortController>();
+
 async function request(url: string, init: RequestInit) {
   const ctrl = new AbortController();
   inflight = ctrl;
-  const timer = setTimeout(() => ctrl.abort(), timeoutFor(init.body));
+  let timedOut = false;
+  const timeout = timeoutFor(init.body);
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, timeout);
+  const started = Date.now();
+  const what = { url: url.replace(/^\/api\//, ""), bytes: init.body instanceof Blob ? init.body.size : null };
   let res: Response;
   try {
     res = await fetch(url, { ...init, signal: ctrl.signal });
-  } catch {
+  } catch (e) {
+    const error = timedOut ? "timeout" : abandoned.has(ctrl) ? "abandoned" : ctrl.signal.aborted ? "aborted" : `network: ${(e as Error).message}`;
+    diag("request", { ...what, ms: Date.now() - started, timeoutMs: timeout, error });
     throw new Offline("offline"); // network down, timed out, or abandoned on return to the app
   } finally {
     clearTimeout(timer);
     if (inflight === ctrl) inflight = null;
   }
+  diag("request", { ...what, ms: Date.now() - started, status: res.status });
   if (res.ok) return res;
   if (res.status === 401) throw new SignedOut("signed_out");
   // The service worker answers 503 {error:"offline"} when the network is down.

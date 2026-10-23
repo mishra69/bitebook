@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { allSaved, captureMeal, openApp, serverMeal } from "./helpers";
+import { allSaved, captureMeal, openApp, serverMeal, sql } from "./helpers";
 
 test("a meal uses its photo's EXIF time, survives a reload mid-draft, and uploads", async ({ page, request }) => {
   await openApp(page);
@@ -56,6 +56,17 @@ test("an upload frozen mid-request is abandoned and redone when the app comes ba
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await serverMeal(request, "frozen upload");
   await allSaved(page);
+
+  // The phone logged the abandoned attempt and the finished upload, and sent the log (D23).
+  await expect
+    .poll(() => sql("SELECT type, data FROM diag_events").map((r) => JSON.parse(r.data as string)), { timeout: 30_000 })
+    .toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "request", error: "abandoned", url: expect.stringMatching(/^photos\//) }),
+        expect.objectContaining({ type: "request", status: 200, url: expect.stringMatching(/^photos\/.*\/original$/) }),
+        expect.objectContaining({ type: "meal_done", sinceSaveMs: expect.any(Number) }),
+      ]),
+    );
 });
 
 test("deleting a meal that hasn't uploaded removes it for good", async ({ page, context, request }) => {

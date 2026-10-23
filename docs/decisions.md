@@ -296,3 +296,20 @@ valid.
   fiber only where an estimate has it.
 - The 7-day trend averages fiber only over days whose meals all have it, so a day that
   was half before `prompt/7` can't drag the average down.
+
+## D23 · 2026-10-23 · Upload diagnostics, logged on the phone
+
+Uploads on 2026-10-22 took 19 to 50 minutes with the app open, though each file the server
+received took about a second. The server can't see attempts that never reach it, so it
+couldn't say whether the network was slow, requests timed out, or the app was paused.
+
+- **The phone keeps a log** (`src/app/lib/diag.ts`): every upload attempt with its size,
+  duration and outcome (status, `timeout`, `abandoned` on return to the app, or the
+  network error), retries scheduled, the app going to the background and back, and the
+  network going offline and online. It lives in its own IndexedDB database, capped at
+  2,000 events.
+- **It's sent to the server on its own,** after each successful upload pass and at app
+  start, into `diag_events` (migration 0012). Kept 30 days, cleared by the nightly
+  purge. The phone deletes only what the server has confirmed.
+- **The app never shows it.** It's for reading with SQL when something goes wrong, so
+  the user doesn't have to describe what happened.

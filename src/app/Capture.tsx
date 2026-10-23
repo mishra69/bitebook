@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ulid } from "../shared/ulid";
 import { MAX_VOICE_MS, MEAL_TYPES, type MealType } from "../shared/meals";
+import { diag } from "./lib/diag";
 import { isStaleDraft } from "./lib/drafts";
 import { preparePhoto, sha256Hex } from "./lib/image";
 import { formatDuration, startRecording, type Recording } from "./lib/voice";
@@ -36,7 +37,8 @@ export function Capture({ userId }: { userId: string }) {
       const d = await getDraft(userId);
       if (!d) return;
       if (!isStaleDraft(d)) return setDraftState(d);
-      await putMeal({ ...d, note: d.note?.trim() || null, draft: false });
+      await putMeal({ ...d, note: d.note?.trim() || null, draft: false, savedAt: Date.now() });
+      diag("saved", { meal: d.id, photos: d.photos.length, auto: true });
       setDraftState(null);
       const n = d.photos.length;
       showToast({ text: `Saved your ${timeOfDay(d.takenAt)} meal (${n} photo${n === 1 ? "" : "s"}) that was left open.` }, 10_000);
@@ -121,7 +123,8 @@ export function Capture({ userId }: { userId: string }) {
     clearTimeout(noteTimer.current);
     setBusy("Saving…");
     try {
-      await putMeal({ ...draft, note: draft.note?.trim() || null, draft: false });
+      await putMeal({ ...draft, note: draft.note?.trim() || null, draft: false, savedAt: Date.now() });
+      diag("saved", { meal: draft.id, photos: draft.photos.length, voice: !!draft.voice });
       setDraftState(null);
       // Ask iOS not to evict the outbox under storage pressure. Best effort.
       navigator.storage?.persist?.().catch(() => {});

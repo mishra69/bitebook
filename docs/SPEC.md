@@ -128,7 +128,8 @@ rows and files for good.
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
 > `batches`, `analyses`, `foods` and `notes` (0006), `questions` (0008), `photos.taken_at` (0009),
-> `voice_notes` (0010), `foods.fiber_g` (0011).
+> `voice_notes` (0010), `foods.fiber_g` (0011),
+> `diag_events` (0012, the phone's upload log, D23).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -273,6 +274,8 @@ Still to check, then delete this section:
 
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
   should be saved, with a note saying so.
+- **Slow uploads** (2026-10-22: 19–50 minutes with the app open). The phone now logs every
+  attempt (D23). After the next slow one, read `diag_events` before guessing at a fix.
 
 ## 8. Roll-off of originals
 
