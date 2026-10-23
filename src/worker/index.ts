@@ -5,6 +5,7 @@ import { diag } from "./diag";
 import { meals } from "./meals";
 import { memory } from "./memory";
 import { purgeDeleted } from "./purge";
+import { push, runReminders } from "./push";
 
 export type AppEnv = {
   Bindings: Env & { AUTH_DISABLED?: string; SESSION_SECRET?: string };
@@ -33,6 +34,7 @@ api.route("/", meals);
 api.route("/", batches);
 api.route("/", memory);
 api.route("/", diag);
+api.route("/", push);
 
 const app = new Hono<AppEnv>();
 app.route("/api", api);
@@ -46,7 +48,7 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(purgeDeleted(env));
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(event.cron === "17 3 * * *" ? purgeDeleted(env) : runReminders(env, event.scheduledTime));
   },
 } satisfies ExportedHandler<Env>;

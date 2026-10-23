@@ -129,6 +129,8 @@ ul { margin: 0; padding-left: 1.2rem; }
 .thumb.no-photo.small { font-size: 1.1rem; }
 .missed-intro { margin: 0; }
 .missed-link { text-align: center; margin-top: 0; }
+.reminder-offer p { margin: 0; }
+.reminders p { margin: 0.25rem 0; }
 .meals.deleted { margin-top: 0.5rem; }
 /* Sits just above the bottom bar. */
 .toast {

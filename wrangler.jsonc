@@ -24,9 +24,12 @@
   // needs no secret (ID-token flow). Until both are set, the API refuses every request.
   "vars": {
     "GOOGLE_CLIENT_ID": "234363181677-1qh9dpevvkr6mtghofllcs8o3gm4pjbi.apps.googleusercontent.com",
-    "ALLOWED_EMAILS": "mishabhi@gmail.com"
+    "ALLOWED_EMAILS": "mishabhi@gmail.com",
+    // Web Push (D25). The private half is a secret: VAPID_PRIVATE_JWK.
+    "VAPID_PUBLIC_KEY": "BB1qlQNTJL7VZdgmo5AFvYhzh3PKA4T8B0kh57Jm6qAb7pT1Oj_x885SXPUOgjl8rzk98jhrPiPDY9T7NRDS_MA"
   },
   "observability": { "enabled": true },
-  // Daily purge of meals deleted more than 30 days ago (src/worker/purge.ts).
-  "triggers": { "crons": ["17 3 * * *"] }
+  // Daily purge of meals deleted more than 30 days ago (src/worker/purge.ts), and
+  // reminders every 15 minutes, so 10:30 pm lands on time in any zone (src/worker/push.ts).
+  "triggers": { "crons": ["17 3 * * *", "*/15 * * * *"] }
 }

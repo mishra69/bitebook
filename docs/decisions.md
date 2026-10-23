@@ -332,3 +332,31 @@ can't be photographed afterwards, so it's described instead.
 - **`prompt/8`** marks such a meal as "no photo (added afterwards from my description)"
   and tells the model to estimate from the words alone, assume typical portions, and
   lower its confidence to match.
+
+## D25 · 2026-10-23 · Reminders: nightly at 10:30 pm, and a morning nudge
+
+Supersedes the reminder plan of 2026-10-21 (spec §11 step 6), which had only the
+morning reminder. The user asked for both:
+
+- **Nightly, at 10:30 pm local, every night**, however many meals were logged ("3 meals
+  logged today. Missed anything?", or "Nothing logged today"). 10:30, not 9:30, because
+  dinner can be late. Tapping it opens Timeline, where "Add a meal I missed" is (D24).
+- **Morning, at 8:00 local, after more than 24 hours with no meal.** Once per gap: if
+  nothing is logged the next day either, the nightly one covers it, so the morning one
+  doesn't repeat. That answers the open question in §12.
+
+How:
+- **Web Push through `webpush-edge`** (the pwa-cloudflare skill's choice), pinned to a
+  commit since it isn't on npm. The VAPID public key is in `wrangler.jsonc`; the private
+  key is the secret `VAPID_PRIVATE_JWK`. Rotating them makes every device subscribe
+  again.
+- **"Local" is the device's zone,** sent with the subscription on every app open, so it
+  follows travel. Subscriptions are in `push_subscriptions` (migration 0013).
+- **A cron every 15 minutes** checks who is due, so 10:30 lands on time in any zone. A
+  run can send up to two hours late if earlier runs were missed. `reminders_sent` makes
+  each reminder go out at most once per local day; a row is claimed before sending, so
+  overlapping runs can't double-send.
+- **Turning them on:** a card on Today until they're on or dismissed, and a Reminders
+  section on Memory with "Send a test", which reports the push service's status codes.
+  On iPhone it works only from the home-screen app, and the permission prompt only
+  appears after a tap.

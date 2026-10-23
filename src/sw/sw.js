@@ -94,3 +94,56 @@ self.addEventListener('fetch', e => {
     })
   );
 });
+
+// ── Reminders (D25) ─────────────────────────────────────────────────────────
+// Inlined from webpush-edge's sw.js (createPushHandler): this worker is a classic
+// script, and module service workers aren't worth the risk on iOS (pwa-cloudflare skill).
+// A push handler is required: iOS doesn't display Declarative Web Push on its own.
+self.addEventListener('push', e => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch { data = {}; }
+  const n = data.notification || data;
+  e.waitUntil(self.registration.showNotification(n.title || 'Bitebook', {
+    body: n.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: n.tag || 'bitebook',
+    data: { url: new URL(n.navigate || '/', self.location.origin).href },
+  }));
+});
+
+// Opens the app on the screen the reminder points at (the timeline, for the nightly one).
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data?.url || new URL('/', self.location.origin).href;
+  e.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of windows) {
+      if ('focus' in w) {
+        if ('navigate' in w && w.url !== url) await w.navigate(url).catch(() => {});
+        return w.focus();
+      }
+    }
+    return self.clients.openWindow(url);
+  })());
+});
+
+// Push services rotate endpoints; without this, reminders silently stop. The page also
+// re-sends its subscription on every open, which covers a failure here.
+self.addEventListener('pushsubscriptionchange', e => {
+  e.waitUntil((async () => {
+    try {
+      const { key } = await (await fetch('/api/push/key')).json();
+      const padded = (key + '='.repeat((4 - key.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+      const sub = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: Uint8Array.from(atob(padded), c => c.charCodeAt(0)),
+      });
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      });
+    } catch { /* the page re-subscribes on its next open */ }
+  })());
+});

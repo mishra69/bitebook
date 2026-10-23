@@ -42,7 +42,7 @@ export default defineConfig({
     preact(),
     cloudflare(
       E2E
-        ? { persistState: { path: ".wrangler/e2e-state" }, config: { vars: { AUTH_DISABLED: "1", TRANSCRIBE_STUB: "1" } } }
+        ? { persistState: { path: ".wrangler/e2e-state" }, config: { vars: { AUTH_DISABLED: "1", TRANSCRIBE_STUB: "1", PUSH_STUB: "1" } } }
         : {},
     ),
     serviceWorker(),

@@ -74,7 +74,8 @@ Sign-in uses Google's ID-token flow, which needs only a **client ID**, with no s
    JavaScript origins**: `https://bitebook.mishabhi.workers.dev`, and for local
    development, `http://localhost` and `http://localhost:5173`. No redirect URI is needed.
 3. Put the client ID in `vars.GOOGLE_CLIENT_ID` in `wrangler.jsonc`, and deploy.
-   `SESSION_SECRET` is the only secret, and it is already set.
+   `SESSION_SECRET` and `VAPID_PRIVATE_JWK` (reminders, D25) are the only secrets, and both
+   are set.
 
 The Worker verifies Google's token, creates a user record (keyed on Google's `sub`) on
 first sign-in, and issues its own 90-day session cookie. Only emails in `ALLOWED_EMAILS`

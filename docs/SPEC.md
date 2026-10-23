@@ -135,7 +135,8 @@ rows and files for good.
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
 > `batches`, `analyses`, `foods` and `notes` (0006), `questions` (0008), `photos.taken_at` (0009),
 > `voice_notes` (0010), `foods.fiber_g` (0011),
-> `diag_events` (0012, the phone's upload log, D23).
+> `diag_events` (0012, the phone's upload log, D23), `push_subscriptions` and
+> `reminders_sent` (0013, D25).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -281,6 +282,9 @@ that.
 
 Still to check, then delete this section:
 
+- **Reminders:** turn them on from the card on Today (home-screen app only), then
+  Memory → Reminders → "Send a test". Does it arrive, and does tapping it open
+  Timeline? Does the 10:30 pm one arrive on time?
 - **A missed meal:** Timeline → "Add a meal I missed", record a note, save. Does the
   reply estimate it sensibly from the words alone?
 
@@ -359,18 +363,9 @@ API" on a batch, and:
 > **Tier:** Plan · **Verified:** 2026-10-23 · **Expires:** 2027-01-17
 
 *Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19),
-voice notes (D21) and fiber (D22).
+voice notes (D21), fiber (D22), missed meals without a photo (D24) and reminders (D25).
 The remaining on-device checks for capture are in §7.*
 
-6. **Logging reminders.** If nothing has been logged for a day or two, send a push
-   notification ("You haven't logged a meal since Tuesday"). Follow the `pwa-cloudflare`
-   skill's Web Push notes and depend on `webpush-edge`: it works on iPhone only from the
-   home-screen app; permission must be asked inside a tap; handle
-   `pushsubscriptionchange`; re-send the subscription on every app open. Decided
-   2026-10-21: remind after **24 hours** with no meal logged, delivered **in the morning**
-   (around 8:00 in the zone of the user's last meal), so it helps for the day ahead. An
-   hourly cron finds users whose local time is 8:00 and whose last meal is more than 24
-   hours old.
 7. **Upload draft photos as they're taken**, so Save is instant and photos survive a
    lost phone mid-meal. Needs a nightly cleanup of R2 files no saved meal refers to
    (discarded drafts).
@@ -400,5 +395,3 @@ Parked: **corrections** (editing an analysis's numbers by hand). Questions in th
 
 - **Handoff to the Claude app.** Checked 2026-10-23: "Copy prompt" then "Share photos"
   works with the Claude app. Still unknown: whether 20 photos is its real limit.
-- **Reminder repeats.** After a morning reminder, if still nothing is logged, remind again
-  the next morning, or only once per gap?

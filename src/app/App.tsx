@@ -4,10 +4,12 @@ import { Capture } from "./Capture";
 import { MealDetail } from "./MealDetail";
 import { MealList } from "./MealList";
 import { Memory } from "./Memory";
+import { ReminderOffer } from "./Reminders";
 import { GoogleSignIn } from "./SignIn";
 import { Timeline } from "./Timeline";
 import { ToastHost } from "./Toast";
 import { startSync } from "./lib/outbox";
+import { refreshReminders } from "./lib/reminders";
 import { useRoute } from "./lib/router";
 import { liveVersion, versionLabel } from "./version";
 
@@ -67,6 +69,10 @@ export function App() {
     if (user) startSync(user.id);
   }, [user?.id]);
 
+  useEffect(() => {
+    if (authState === "ok") refreshReminders();
+  }, [authState]);
+
   // The install prompt must not cover the sign-in button, so only offer it once signed in.
   useEffect(() => {
     if (authState === "ok" && typeof PWAInstall !== "undefined") PWAInstall.show(false);
@@ -109,6 +115,7 @@ export function App() {
           {route.name === "today" && (
             <>
               <Capture userId={user.id} missed={route.missed} />
+              <ReminderOffer />
               <MealList userId={user.id} />
             </>
           )}
