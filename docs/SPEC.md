@@ -255,26 +255,20 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
 
 ## 7. Capture: what still needs an iPhone
 
-> **Tier:** Plan · **Verified:** 2026-10-21 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-23 · **Expires:** 2026-12-17
 
-Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). It was
-tested in Chromium: EXIF time, drafts surviving a reload, offline save, the queue
-draining on reconnect, and originals byte-identical in R2. These are only knowable on the
-phone. Delete this section once they're checked:
+Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). Checked on
+the iPhone by 2026-10-23: reload behind the camera, offline save then upload on
+reconnect, several 12 MP photos in one meal, helpings counted by the model, voice notes
+(auto-stop at 1:00, transcripts good enough: "Nandes" for naans was still read right; Hindi
+comes out in Devanagari, which models read fine). Known limitation: iOS asks for the
+microphone again on later launches of the home-screen app; nothing in the app can change
+that.
 
-- **Reload behind the camera:** if iOS reloads the app while the camera is open, the
-  draft should come back.
-- **Offline:** capture in airplane mode, then reconnect. The meal should upload by
-  itself.
-- **Memory:** several 12 MP photos in one meal should not crash the app.
-- **Helpings:** a meal with photos minutes apart should come back from the model as one
-  meal with its helpings counted (and named in the description).
+Still to check, then delete this section:
+
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
   should be saved, with a note saying so.
-- **Voice notes:** does the microphone prompt come up once, or on every launch of the
-  home-screen app? Does recording stop cleanly at 1:00? Is the transcript good with food
-  names (the meal detail shows it)? If transcription is often poor, try another model or
-  drop the feature (D21).
 
 ## 8. Roll-off of originals
 
@@ -343,7 +337,7 @@ API" on a batch, and:
 
 ## 11. Build order
 
-> **Tier:** Plan · **Verified:** 2026-10-21 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-23 · **Expires:** 2027-01-17
 
 *Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19), and
 voice notes (D21).
@@ -363,6 +357,13 @@ The remaining on-device checks for capture are in §7.*
    (discarded drafts).
 8. The roll-off script.
 9. The API path (optional; it reuses everything from steps 4–5).
+10. **Apple Health sync** (added 2026-10-23, not designed yet). After an import, write each
+    analyzed meal's energy, protein, carbs, fat (and fiber, if tracked) to Apple Health as
+    dietary samples at the meal's time. A web app can't write to HealthKit, so the likely
+    route is an iOS Shortcut: it fetches newly analyzed meals from a Bitebook endpoint (with
+    a long-lived token made for it, since Shortcuts can't do Google sign-in) and logs them
+    with "Log Health Sample". The endpoint must hand each meal over once, because a
+    Shortcut can't delete samples it already wrote.
 
 Backlog (corpus only, no effect on nutrition data):
 - **👎 on a bad transcript.** One tap on the meal detail flags a voice note's transcript
@@ -376,11 +377,9 @@ Parked: **corrections** (editing an analysis's numbers by hand). Questions in th
 
 ## 12. Open questions
 
-> **Tier:** Plan · **Verified:** 2026-10-21 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-23 · **Expires:** 2026-12-17
 
-- **Handoff to the Claude app.** Built as two buttons: "Copy prompt", then "Share photos"
-  through the iOS share sheet (Download on browsers that can't share files). To check on
-  the iPhone: does the Claude app appear in the share sheet for several images, do they
-  arrive in one message, and does the 20-photo cap match its real limit?
+- **Handoff to the Claude app.** Checked 2026-10-23: "Copy prompt" then "Share photos"
+  works with the Claude app. Still unknown: whether 20 photos is its real limit.
 - **Reminder repeats.** After a morning reminder, if still nothing is logged, remind again
   the next morning, or only once per gap?
