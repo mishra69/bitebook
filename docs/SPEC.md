@@ -212,7 +212,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/8`)
+### Prompt (`prompt/9`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -242,6 +242,8 @@ code can't say:
 - A meal without a photo (D24) is listed as "no photo (added afterwards from my
   description)" with its time as "~13:00", and the model is told to estimate from the
   words alone and lower its confidence.
+- The reply opens with a readable copy of the whole JSON (not a summary), in short
+  Markdown lines a phone can show without sideways scrolling, then the JSON block (D26).
 - Estimates include fiber since `prompt/7`: per meal, per remembered food, and as a daily
   average in the trend (D22).
 
@@ -254,6 +256,8 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
 - Import is all-or-nothing: the analyses, the remembered-food changes and closing the
   batch go to D1 as one transaction. Any validation error stores nothing, and every error
   is shown at once, so one paste-and-fix round is enough.
+- When the paste has a ```` ```json ```` block, the last one is what's imported, so the
+  readable copy before it can't interfere (D26).
 - Validation is strict about structure (exactly the batch's keys, codes the prompt
   actually listed) and forgiving about form: chatter or a ```` ```json ```` fence around
   the JSON, and numbers written as strings ("400").

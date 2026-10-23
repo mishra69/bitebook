@@ -67,7 +67,10 @@ describe("buildPrompt", () => {
     expect(p).toContain('"model": "<your model name and version, as you know it, or null>"');
     expect(p).toContain("Questions already asked (don't ask these again; use the answers):\n—");
     expect(p).toContain("Ask at most\n   2, together in one message, then wait for my answers before writing the JSON.");
-    expect(p).toContain("Your final reply must be ONLY one JSON code block");
+    expect(p).toContain("Your final reply has two parts, and nothing else:");
+    expect(p).toContain("A readable copy of everything in the JSON, for checking on a phone. Not a summary");
+    expect(p).toContain("2. One JSON code block, with exactly the same content");
+    expect(p).toContain("If I ask for a correction, change both parts the same way.");
     expect(p).toContain('"topic": "<short topic>"');
   });
   it("includes notes, remembered foods, the digest (capped) and the trend", () => {

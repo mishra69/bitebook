@@ -16,6 +16,13 @@ describe("extractJson", () => {
     const wrapped = "Here you go!\n\n```json\n" + real + "\n```\nLet me know if you need anything else {really}.";
     expect(extractJson(wrapped)).toEqual(JSON.parse(real));
   });
+  it("reads the JSON block after a readable copy, even if that copy has braces (prompt/9)", () => {
+    const reply = "**A · Sat dinner** {curry night}\nabout 400 kcal\n\n```json\n" + real + "\n```\n";
+    expect(extractJson(reply)).toEqual(JSON.parse(real));
+    // A correction later in the same paste: the last block wins.
+    const corrected = JSON.stringify({ ...JSON.parse(real), model: "fixed" });
+    expect((extractJson(reply + "\nFixed:\n```json\n" + corrected + "\n```") as { model: string }).model).toBe("fixed");
+  });
   it("isn't fooled by braces inside strings", () => {
     expect(extractJson('x {"a": "} {", "b": {"c": 1}} y')).toEqual({ a: "} {", b: { c: 1 } });
   });

@@ -10,7 +10,8 @@ import type { MealType } from "./meals";
 // prompt/6 (2026-10-21): a meal's voice note, as transcribed text (D21).
 // prompt/7 (2026-10-23): fiber, per meal and per remembered food (D22).
 // prompt/8 (2026-10-23): meals added afterwards without a photo, from a description (D24).
-export const PROMPT_VERSION = "prompt/8";
+// prompt/9 (2026-10-23): a readable copy of the whole reply before the JSON block (D26).
+export const PROMPT_VERSION = "prompt/9";
 export const MAX_QUESTIONS = 2;
 export const ASKED_MAX_LINES = 60;
 export const REPLY_SCHEMA = "bitebook.reply/1";
@@ -239,10 +240,19 @@ ${meals}
 Set "model" to your own model name and version as you know it, or null if you don't know.
 In "asked", list the questions you asked me in this chat with my answers (answer null if I
 didn't answer); it's [] when you asked nothing. Every meal key above must appear exactly
-once in "meals". Your final reply must be ONLY one JSON code block in exactly this format,
-with no other text:
+once in "meals".
+
+Your final reply has two parts, and nothing else:
+1. A readable copy of everything in the JSON, for checking on a phone. Not a summary:
+   every meal with every value (description, kcal, protein, carbs, fat, fiber,
+   confidence, foods used, comment, or why it was skipped), every remembered-food change
+   with its values and reason, the questions and answers, and the summary and
+   suggestion. Use short lines and plain Markdown (a heading or bold line per meal,
+   then short lines); no tables and no code blocks.
+2. One JSON code block, with exactly the same content, in exactly this format:
 \`\`\`json
 ${JSON.stringify({ ...REPLY_EXAMPLE, batch_id: p.batchId }, null, 2)}
 \`\`\`
+If I ask for a correction, change both parts the same way.
 `;
 }

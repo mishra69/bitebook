@@ -29,8 +29,8 @@ test("a pasted reply becomes analyses on the meals, and the batch's summary is s
   await expect(card).toBeVisible();
   const batchId = (await (await request.get("/api/batches?status=open")).json()).batches[0].id;
 
-  // Chat apps wrap the JSON in a fence and add a sentence or two: that must still import.
-  const pasted = "Here's the analysis:\n\n```json\n" + JSON.stringify(replyFor(batchId, (r) => (r.meals[0].fiber_g = 7)), null, 2) + "\n```\nHope that helps!";
+  // The reply's readable copy comes first (prompt/9), then the fenced JSON: that must import.
+  const pasted = "**A · Sat dinner** {curry night}\n~400 kcal\n\n```json\n" + JSON.stringify(replyFor(batchId, (r) => (r.meals[0].fiber_g = 7)), null, 2) + "\n```\nHope that helps!";
   await card.locator("textarea").fill(pasted);
   await card.getByPlaceholder(/Claude/).fill("Claude Opus (Claude app)");
   await card.getByRole("button", { name: "Import reply" }).click();

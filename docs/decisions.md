@@ -360,3 +360,18 @@ How:
   section on Memory with "Send a test", which reports the push service's status codes.
   On iPhone it works only from the home-screen app, and the permission prompt only
   appears after a tap.
+
+## D26 · 2026-10-23 · A readable copy of the reply, before the JSON
+
+The user checks each reply in the chat and asks for corrections there, and the JSON block
+is hard to read on a phone: the Claude app doesn't wrap code blocks, so long values need
+sideways scrolling. Hard-wrapping inside the JSON was considered and dropped (strings
+can't hold line breaks without a forgiving parser, and it's still JSON to read).
+
+`prompt/9` asks for two parts: first a readable copy in plain Markdown with short lines,
+then the JSON block. The copy is **everything in the JSON, not a summary**, so what the
+user checks is what gets imported. Corrections must change both parts. The JSON stays in
+its own code block, so the app's copy button still takes just the JSON.
+
+The importer now reads the last ```` ```json ```` block when there is one, so braces in
+the readable part can't confuse it, and a corrected block pasted after the first one wins.

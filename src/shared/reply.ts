@@ -48,9 +48,13 @@ const MAX_ASKED_KEPT = 5;
 
 export type BatchFacts = { id: string; keys: string[]; activeCodes: string[] };
 
-// Chat apps wrap JSON in ```json fences and sometimes add a sentence around it. Take
-// the first balanced {...} object, respecting strings so braces inside them don't count.
+// Chat apps wrap JSON in ```json fences and sometimes add a sentence around it, and since
+// prompt/9 the reply opens with a readable copy (D26), which may contain braces. So look
+// inside the last ```json fence if there is one; then take the first balanced {...}
+// object, respecting strings so braces inside them don't count.
 export function extractJson(text: string): unknown {
+  const fenced = [...text.matchAll(/```json[^\n]*\n([^]*?)```/gi)].at(-1);
+  if (fenced) text = fenced[1];
   const start = text.indexOf("{");
   if (start < 0) throw new Error("No JSON object found in the pasted text.");
   let depth = 0;
