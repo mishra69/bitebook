@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 
 // Hash routes, so the service worker's single cached shell serves every screen offline.
-export type Route = { name: "today"; missed?: boolean } | { name: "timeline" } | { name: "analyze" } | { name: "memory" } | { name: "meal"; id: string };
+export type Route = { name: "today"; missed?: boolean } | { name: "timeline" } | { name: "analyze" } | { name: "memory" } | { name: "settings" } | { name: "meal"; id: string };
 
 export function parseRoute(hash: string): Route {
   const m = hash.match(/^#\/meal\/([0-9A-HJKMNP-TV-Z]{26})$/);
@@ -10,6 +10,7 @@ export function parseRoute(hash: string): Route {
   if (hash === "#/missed") return { name: "today", missed: true }; // Today, with a no-photo meal open (D24)
   if (hash === "#/analyze") return { name: "analyze" };
   if (hash === "#/memory") return { name: "memory" };
+  if (hash === "#/settings") return { name: "settings" };
   return { name: "today" };
 }
 

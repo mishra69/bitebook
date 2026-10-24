@@ -9,7 +9,7 @@ const why: Record<string, string | undefined> = {
   "needs-install": "Reminders work only in the home-screen app: open Bitebook from your Home Screen.",
   blocked: "Notifications are blocked for Bitebook. Turn them on in Settings → Notifications → Bitebook.",
   unsupported: "This browser can't show notifications.",
-  dismissed: "No problem. You can turn them on here any time.",
+  dismissed: "No problem. You can turn them on in ⚙︎ Settings any time.",
 };
 
 async function turnOn(after: (state: ReturnType<typeof reminderState>) => void) {
@@ -47,7 +47,7 @@ export function ReminderOffer() {
   );
 }
 
-// On Memory: the state, a way to turn them on, and a test.
+// In Settings: the state, a way to turn them on, and a test.
 export function ReminderSettings() {
   const [state, setState] = useState(reminderState);
   const [devices, setDevices] = useState<number | null>(null);

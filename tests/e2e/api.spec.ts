@@ -22,7 +22,7 @@ test.afterAll(async ({ request }) => {
 });
 
 test("with automatic analysis on, a new meal is analyzed by the cron run and its cost recorded", async ({ page, request }) => {
-  await openApp(page, "#/memory");
+  await openApp(page, "#/settings");
   const card = page.locator(".auto-analysis");
   await expect(card).toContainText("Off");
   await card.locator(".model-input").fill("anthropic/claude-opus-5.5");
@@ -86,6 +86,27 @@ test("a correction re-estimates the meal; spoken words are transcribed into the 
 
   await cron(request);
   await expect(page.locator(".analysis").first()).toContainText("revised: My correction: it was two eggs, not one", { timeout: 15_000 });
+});
+
+test("meals saved while it was off can be analyzed from Settings or picked on Analyze", async ({ page, request }) => {
+  await request.put("/api/analysis/settings", { data: { model: null } });
+  const a = await seed(request, "2026-10-20T13:00:00-05:00", "waiting A");
+  const b = await seed(request, "2026-10-20T19:00:00-05:00", "waiting B");
+  await request.put("/api/analysis/settings", { data: { model: "anthropic/claude-opus-5.5" } });
+
+  await openApp(page, "#/settings");
+  await expect(page.getByRole("button", { name: /^Analyze \d+ waiting meals?$/ })).toBeVisible();
+
+  // On Analyze, the picked meals can go to the API instead of a chat batch.
+  await page.goto("/#/analyze");
+  await expect(page.locator(".pick-row", { hasText: "waiting A" })).toBeVisible();
+  for (const box of await page.locator(".pick-row input").all()) await box.uncheck();
+  await page.locator(".pick-row", { hasText: "waiting A" }).locator("input").check();
+  await page.getByRole("button", { name: "Analyze 1 with claude-opus-5.5 instead" }).click();
+  await expect(page.locator(".toast")).toContainText("Analyzing 1 meal");
+  expect((await mealOf(request, a)).api.job.status).toBe("queued");
+  expect((await mealOf(request, b)).api.job).toBeNull();
+  await expect(page.locator(".pick-row", { hasText: "waiting A" })).toHaveCount(0); // no longer offered for a chat batch
 });
 
 test("signed photo links are refused when tampered with", async ({ request }) => {

@@ -5,6 +5,7 @@ import { MealDetail } from "./MealDetail";
 import { MealList } from "./MealList";
 import { Memory } from "./Memory";
 import { ReminderOffer } from "./Reminders";
+import { Settings } from "./Settings";
 import { GoogleSignIn } from "./SignIn";
 import { Timeline } from "./Timeline";
 import { ToastHost } from "./Toast";
@@ -95,9 +96,9 @@ export function App() {
       <header class="app-header">
         <h1>Bitebook</h1>
         {user && (
-          <button class="link" onClick={signOut} title={user.email}>
-            Sign out
-          </button>
+          <a class="gear" href="#/settings" aria-label="Settings" aria-current={route.name === "settings" ? "page" : undefined}>
+            ⚙︎
+          </a>
         )}
       </header>
       {authState === "checking" && !user && <p class="muted">Loading…</p>}
@@ -122,6 +123,7 @@ export function App() {
           {route.name === "timeline" && <Timeline userId={user.id} />}
           {route.name === "analyze" && <Analyze />}
           {route.name === "memory" && <Memory />}
+          {route.name === "settings" && <Settings email={user.email} onSignOut={signOut} />}
           {route.name === "meal" && <MealDetail id={route.id} />}
         </>
       )}

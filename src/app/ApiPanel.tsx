@@ -26,7 +26,7 @@ export function ApiPanel({ meal, onChanged }: { meal: Meal; onChanged: () => voi
     }).catch(() => null);
     if (!res?.ok) {
       const err = res ? ((await res.json().catch(() => ({}))) as { error?: string }).error : "offline";
-      showToast({ text: err === "off" ? "Automatic analysis is off (Memory → Automatic analysis)." : "Couldn't send that. Are you online?" });
+      showToast({ text: err === "off" ? "Automatic analysis is off (turn it on in ⚙︎ Settings)." : "Couldn't send that. Are you online?" });
       return false;
     }
     onChanged();

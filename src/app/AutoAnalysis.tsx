@@ -1,12 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import { showToast } from "./lib/notify";
 
-type Settings = { model: string | null; suggested: string[]; configured: boolean };
+type Settings = { model: string | null; suggested: string[]; configured: boolean; waiting: number };
 type Day = { day: string; runs: number; cost_usd: number; input_tokens: number; output_tokens: number; avg_latency_ms: number };
 
 const usd = (n: number) => (n < 0.1 ? `${(n * 100).toFixed(1)}¢` : `$${n.toFixed(2)}`);
 
-// On Memory: which model analyzes new meals automatically (D27, D28), and what it costs.
+// In Settings: which model analyzes new meals automatically (D27, D28), and what it costs.
 export function AutoAnalysis() {
   const [s, setS] = useState<Settings | null>(null);
   const [choice, setChoice] = useState("");
@@ -42,6 +42,7 @@ export function AutoAnalysis() {
     const res = await fetch("/api/analysis/queue-pending", { method: "POST" }).catch(() => null);
     const d = res?.ok ? ((await res.json()) as { queued: number }) : null;
     showToast({ text: d ? (d.queued ? `Analyzing ${d.queued} waiting meal${d.queued === 1 ? "" : "s"}.` : "No meals are waiting.") : "Couldn't queue them." });
+    load();
   };
 
   if (!s) return null;
@@ -82,7 +83,13 @@ export function AutoAnalysis() {
           </button>{" "}
           {s.model && (
             <>
-              <button class="button secondary" onClick={queuePending}>Analyze waiting meals</button>{" "}
+              {s.waiting > 0 && (
+                <>
+                  <button class="button secondary" onClick={queuePending}>
+                    Analyze {s.waiting} waiting meal{s.waiting === 1 ? "" : "s"}
+                  </button>{" "}
+                </>
+              )}
               <button class="link" onClick={() => save(null)}>Turn off</button>
             </>
           )}

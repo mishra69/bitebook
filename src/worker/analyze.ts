@@ -242,10 +242,25 @@ async function runJob(env: ApiEnv, origin: string, job: Job): Promise<string | n
 
 export const analysis = new Hono<AppEnv>();
 
-// GET /api/analysis/settings — the model meals are analyzed with (null: off), and suggestions.
+// Meals with no analysis that nothing is working on: saved while automatic analysis was
+// off, or whose run failed for good.
+const WAITING_SQL = `SELECT m.id FROM meals m WHERE m.user_id = ?1 AND m.deleted_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0)
+    AND NOT EXISTS (SELECT 1 FROM batches b, json_each(b.key_map) k WHERE b.user_id = ?1 AND b.status = 'open' AND k.value = m.id)
+    AND NOT EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running'))`;
+
+// GET /api/analysis/settings — the model meals are analyzed with (null: off), suggestions,
+// and how many meals are waiting for it.
 analysis.get("/analysis/settings", async (c) => {
-  const row = await c.env.DB.prepare("SELECT api_model FROM users WHERE id = ?1").bind(c.get("user").id).first<{ api_model: string | null }>();
-  return c.json({ model: row?.api_model ?? null, suggested: SUGGESTED_MODELS, configured: Boolean((c.env as ApiEnv).OPENROUTER_API_KEY || (c.env as ApiEnv).OPENROUTER_STUB) });
+  const user = c.get("user");
+  const row = await c.env.DB.prepare("SELECT api_model FROM users WHERE id = ?1").bind(user.id).first<{ api_model: string | null }>();
+  const waiting = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM (${WAITING_SQL})`).bind(user.id).first<{ n: number }>();
+  return c.json({
+    model: row?.api_model ?? null,
+    suggested: SUGGESTED_MODELS,
+    configured: Boolean((c.env as ApiEnv).OPENROUTER_API_KEY || (c.env as ApiEnv).OPENROUTER_STUB),
+    waiting: waiting?.n ?? 0,
+  });
 });
 
 // PUT /api/analysis/settings {model} — an OpenRouter model id, or null to turn it off.
@@ -257,19 +272,18 @@ analysis.put("/analysis/settings", async (c) => {
   return c.json({ ok: true, model: model || null });
 });
 
-// POST /api/analysis/queue-pending — analyze every meal waiting for analysis, now.
+// POST /api/analysis/queue-pending {meal_ids?} — analyze the waiting meals now: all of them,
+// or the ones picked on Analyze.
 analysis.post("/analysis/queue-pending", async (c) => {
   const user = c.get("user");
   const model = await userModel(c.env.DB, user.id);
   if (!model) return c.json({ error: "off" }, 409);
+  const body = await c.req.json<{ meal_ids?: unknown }>().catch(() => ({}) as { meal_ids?: unknown });
+  const picked = Array.isArray(body.meal_ids) ? body.meal_ids.filter(isUlid) : null;
   const { results } = await c.env.DB.prepare(
-    `SELECT m.id FROM meals m WHERE m.user_id = ?1 AND m.deleted_at IS NULL
-       AND NOT EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0)
-       AND NOT EXISTS (SELECT 1 FROM batches b, json_each(b.key_map) k WHERE b.user_id = ?1 AND b.status = 'open' AND k.value = m.id)
-       AND NOT EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running'))
-     ORDER BY m.taken_ms LIMIT 50`,
+    `${WAITING_SQL} ${picked ? "AND m.id IN (SELECT value FROM json_each(?2))" : "AND ?2 IS NULL"} ORDER BY m.taken_ms LIMIT 50`,
   )
-    .bind(user.id)
+    .bind(user.id, picked ? JSON.stringify(picked) : null)
     .all<{ id: string }>();
   for (const m of results) await enqueue(c.env.DB, user.id, m.id, model, "analyze", null);
   return c.json({ ok: true, queued: results.length });

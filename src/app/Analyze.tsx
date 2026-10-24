@@ -27,9 +27,14 @@ export function Analyze() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoModel, setAutoModel] = useState<string | null>(null);
 
   const load = async () => {
     try {
+      fetch("/api/analysis/settings")
+        .then((r) => r.json() as Promise<{ model: string | null }>)
+        .then((s) => setAutoModel(s.model))
+        .catch(() => {});
       const [p, b, done] = await Promise.all([
         fetch("/api/batches/pending-meals").then((r) => (r.ok ? r.json() : Promise.reject())),
         fetch("/api/batches?status=open").then((r) => (r.ok ? r.json() : Promise.reject())),
@@ -86,6 +91,20 @@ export function Analyze() {
     await load();
   };
 
+  // With automatic analysis on, the picked meals can go to the API path instead (D28).
+  const analyzeNow = async () => {
+    setBusy(true);
+    const res = await fetch("/api/analysis/queue-pending", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meal_ids: [...selected] }),
+    }).catch(() => null);
+    setBusy(false);
+    const d = res?.ok ? ((await res.json()) as { queued: number }) : null;
+    showToast({ text: d ? `Analyzing ${d.queued} meal${d.queued === 1 ? "" : "s"}. The estimates show on Timeline in a minute or two.` : "Couldn't queue them. Are you online?" });
+    await load();
+  };
+
   const abandon = async (id: string) => {
     if (!confirm("Abandon this batch? Its meals go back to the list, ready for another batch.")) return;
     const res = await fetch(`/api/batches/${id}/abandon`, { method: "POST" }).catch(() => null);
@@ -124,6 +143,11 @@ export function Analyze() {
           <button class="button wide" disabled={busy || selected.size === 0 || photoCount > maxPhotos} onClick={create}>
             {busy ? "Creating…" : `Create batch · ${selected.size} meal${selected.size === 1 ? "" : "s"}, ${photoCount} photo${photoCount === 1 ? "" : "s"}`}
           </button>
+          {autoModel && (
+            <button class="button wide secondary" disabled={busy || selected.size === 0} onClick={analyzeNow}>
+              Analyze {selected.size} with {autoModel.split("/").pop()} instead
+            </button>
+          )}
           {photoCount > maxPhotos && <p class="bad small">Too many photos for one message. Pick at most {maxPhotos}.</p>}
         </>
       )}

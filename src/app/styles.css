@@ -70,7 +70,9 @@ ul { margin: 0; padding-left: 1.2rem; }
   opacity: 0.55;
   font-variant-numeric: tabular-nums;
 }
-.app-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.5rem; }
+.app-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.gear { font-size: 1.6rem; line-height: 1; color: var(--muted); text-decoration: none; padding: 0.4rem 0.2rem 0.4rem 0.8rem; }
+.gear[aria-current="page"] { color: var(--fg); }
 .link { background: none; border: 0; color: var(--muted); font: inherit; text-decoration: underline; padding: 0.5rem 0; }
 .section-title { font-size: 0.95rem; margin: 1rem 0 0.5rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .sync-line { font-size: 0.9rem; color: var(--muted); min-height: 1.5em; margin: 0; }

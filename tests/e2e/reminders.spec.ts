@@ -21,7 +21,7 @@ test("a device registers for reminders with its zone, and a test reminder reache
   expect(test).toMatchObject({ failed: 0 });
   expect(test.sent).toBeGreaterThanOrEqual(1);
 
-  await openApp(page, "#/memory");
+  await openApp(page, "#/settings");
   await expect(page.locator(".reminders")).toContainText("10:30");
 
   await request.post("/api/push/unsubscribe", { data: { endpoint: subscription(1).endpoint } });

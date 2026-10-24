@@ -300,7 +300,7 @@ that.
 
 Still to check, then delete this section:
 
-- **The API path trial:** turn it on in Memory → Automatic analysis. Do estimates arrive
+- **The API path trial:** turn it on in ⚙︎ Settings → Automatic analysis. Do estimates arrive
   a minute or so after saving? Are they as good as the chat's? Do questions and "Correct
   this" (typed and spoken) feel natural? What does Memory say it costs per day?
 
@@ -359,18 +359,16 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 Built: `src/worker/analyze.ts` (queue, OpenRouter call, signed photo links, routes),
 `src/app/ApiPanel.tsx` and `src/app/AutoAnalysis.tsx`. Why it's shaped this way: D27
 and D28. The trial (from 2026-10-24, a week or two) answers three questions: is it as
-good as the chat, what does it cost per person per day (Memory shows it), and is it
+good as the chat, what does it cost per person per day (Settings shows it), and is it
 easy enough for family members.
 
 ## 10. Screens
 
-> **Tier:** Plan · **Verified:** 2026-10-18 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-24 · **Expires:** 2027-01-17
 
-Built (`src/app/`): Today (capture), Timeline, Meal detail with its analyses, Analyze
-(export and import) and Memory. Still to come: corrections on the detail screen, "Run via
-API" on a batch, and:
-
-- **Settings:** storage usage, the default model name, and abandoning stale open batches.
+Built (`src/app/`): Today (capture), Timeline, Meal detail with its analyses, questions and
+corrections, Analyze (export and import), Memory, and Settings behind the ⚙︎ in the header
+(D29). Ideas for Settings later: storage usage, abandoning stale open batches.
 
 ## 11. Build order
 
@@ -394,6 +392,22 @@ The remaining on-device checks for capture are in §7.*
    (discarded drafts). Demoted 2026-10-24: uploads were slow with the app open, so this
    wouldn't have helped; wait for the upload log (D23) to show why.
 9. The roll-off script (demoted 2026-10-24).
+
+Parked, to decide after the API trial (numbers from the first real runs, 2026-10-24:
+Opus 5.5 cost 4.4¢ for a one-photo meal, 7.8¢ for three photos, 7.1¢ for a revision;
+about 2,600 input tokens per photo):
+- **Coaching: a daily tip** drawn from the history, to nudge habits slowly. Not
+  time-critical, so it could use a provider's batch mode (about half price), but at one
+  call a day that saves under a cent. The design questions matter more: what history it
+  sees, how tips avoid repeating, where it shows (Today, or the morning reminder).
+- **Cheaper revisions with prompt caching.** A revision re-sends the whole prompt and every
+  photo at full price. To be cacheable it must repeat the first request exactly, then the
+  model's reply, then the user's words (today it rebuilds the prompt). OpenAI and Gemini
+  cache automatically for free; Claude needs a cache mark, costs 25% more to write and
+  keeps it 5 minutes. That pays only if quick answers are common: check how often
+  questions come and how fast they're answered during the trial.
+- **Smaller photos for the model.** At about 1,000 px instead of 1,600, image tokens drop
+  by about 60%. Test on a few meals before switching, since portions may suffer.
 
 Backlog (corpus only, no effect on nutrition data):
 - **👎 on a bad transcript.** One tap on the meal detail flags a voice note's transcript

@@ -425,3 +425,15 @@ use Bitebook without the copy-and-paste steps.
   what it cost.
 - **The chat handoff stays.** Meals queued or analyzed by the API aren't offered for a
   chat batch, and API runs never appear as open batches on Analyze.
+
+## D29 · 2026-10-24 · A Settings screen, reached from a gear in the header
+
+Settings had collected on Memory (automatic analysis, reminders) and Sign out sat in the
+header. Memory is what the prompts know about the user; Settings is how the app behaves.
+So there's a Settings screen (`#/settings`) with automatic analysis, reminders and the
+account (email, Sign out), reached from a ⚙︎ in the header rather than a fifth tab, which
+wouldn't fit on a phone. No avatar for now.
+
+The API path's "Analyze waiting meals" stays (it caught the user's backlog on the first
+day): in Settings it shows only when meals are waiting, with the count, and on Analyze the
+picked meals can go to the API instead of a chat batch.
