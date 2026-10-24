@@ -41,6 +41,12 @@ export type Meal = {
   voice?: VoiceNote | null;
   analysis?: Analysis | null; // the latest non-skipped one, in lists
   analyses?: Analysis[]; // every one, newest first, on the detail screen
+  api?: ApiState; // the API path's latest run and open questions (D28)
+};
+
+export type ApiState = {
+  job: { status: "queued" | "running" | "done" | "failed"; kind: "analyze" | "revise"; error: string | null } | null;
+  questions: { id: string; topic: string; question: string }[];
 };
 
 export type Analysis = {

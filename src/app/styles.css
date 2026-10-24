@@ -184,3 +184,13 @@ ul { margin: 0; padding-left: 1.2rem; }
 .voice.saved audio, .voice-detail audio { width: 100%; }
 .voice-detail { margin: 0.75rem 0; display: grid; gap: 0.5rem; }
 .voice-detail p { margin: 0; }
+
+/* The API path (D28). */
+.api-status { margin: 0.5rem 0; }
+.questions .question { margin: 0.5rem 0 0.75rem; }
+.questions .question p { margin: 0 0 0.35rem; }
+.text-voice { display: grid; gap: 0.4rem; }
+.text-voice textarea, .model-input { width: 100%; box-sizing: border-box; font: inherit; padding: 0.5rem; border-radius: 8px; border: 1px solid var(--muted); background: var(--bg); color: var(--fg); }
+.model-input { display: block; margin-top: 0.3rem; }
+.usage-days { padding-left: 1.1rem; font-size: 0.85rem; color: var(--muted); }
+.badge.question { background: none; border: 1px solid var(--muted); }

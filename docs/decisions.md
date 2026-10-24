@@ -375,3 +375,53 @@ its own code block, so the app's copy button still takes just the JSON.
 
 The importer now reads the last ```` ```json ```` block when there is one, so braces in
 the readable part can't confuse it, and a corrected block pasted after the first one wins.
+
+## D27 · 2026-10-24 · The API path goes through OpenRouter, and stays provider-neutral
+
+Supersedes the provider part of D6 and §9a ("Anthropic is the first"). The user has an
+OpenRouter key and wants to switch models without new accounts, payment methods and keys.
+More importantly, the API path should not be shaped around one vendor's features: if it
+were, switching vendors would mean redesigning features, not changing a setting.
+
+So the API path relies only on what any vision model through OpenRouter offers: text and
+images in, text out, a token count and a cost per call. Concretely:
+- **JSON is asked for in the prompt**, and `response_format` carries the reply's JSON
+  Schema (`REPLY_JSON_SCHEMA`) for models that support it. The validator stays the real
+  check, as on the chat path.
+- **Questions and corrections live in Bitebook** (D28), not in a provider's conversation
+  state. A revision is a fresh single request carrying the earlier estimate.
+- **Photos go as short-lived signed links** (`/img/…`, 30 minutes, HMAC with a key
+  derived from `SESSION_SECRET`) rather than inline, which keeps the Worker's CPU time
+  and request size down.
+- **Cost is OpenRouter's own figure** (`usage.cost`), stored on each run's batch.
+
+The model is a per-user setting (any OpenRouter id), so one person can try another model
+without affecting anyone else. The key is the secret `OPENROUTER_API_KEY`.
+
+## D28 · 2026-10-24 · Automatic analysis per meal, with questions and corrections in the app
+
+Changes Core (principles 4 and 7, §3) and reverses parts of D18 and D20. The user wants
+to use the API path as the main method for a week or two, to judge whether it matches the
+chat (or beats it), what it costs per person per day, and whether family members could
+use Bitebook without the copy-and-paste steps.
+
+- **Every new meal is analyzed automatically** when automatic analysis is on (Memory):
+  saving queues it, and a cron run every minute takes it (after 30 seconds if it has a
+  voice note, so the transcript is ready). Each meal is its own batch, with the API
+  variant of the prompt (`prompt/10`). There's no confirmation tap or cost estimate before
+  a run (which principle 7 used to require); instead every run's cost is recorded and
+  shown on Memory, per day.
+- **Questions:** with no chat to ask in, the model gives its best estimate now and may
+  add up to two questions to the reply. They show on the meal; the answer (typed or
+  spoken) triggers a revision. Skipped questions stay unanswered, and like answered ones
+  are never asked again. This reverses D18's "no re-analysis" for the API path.
+- **Corrections:** "Correct this" on any analyzed meal takes a typed or spoken correction
+  and triggers a revision. This un-parks corrections (D20), but as words for the model,
+  not hand-edited numbers.
+- **A revision adds an analysis; it never replaces one** (principle 5). The meal shows the
+  newest, and every later prompt's digest uses it.
+- **Failures** are retried twice (after 2 and 4 minutes), then shown on the meal with a
+  "Try again". A reply that fails validation is kept on its batch for debugging, with
+  what it cost.
+- **The chat handoff stays.** Meals queued or analyzed by the API aren't offered for a
+  chat batch, and API runs never appear as open batches on Analyze.

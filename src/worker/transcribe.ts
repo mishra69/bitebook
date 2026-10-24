@@ -15,28 +15,11 @@ export async function transcribe(env: Env, userId: string, mealId: string): Prom
   if (row.transcript !== null) return row.transcript;
 
   let text: string;
-  let model = TRANSCRIBE_MODEL;
+  let model: string;
   try {
     const obj = await env.PHOTOS.get(row.r2_key);
     if (!obj) throw new Error("audio missing from R2");
-    const audio = new Uint8Array(await obj.arrayBuffer());
-    if (env.TRANSCRIBE_STUB === "1") {
-      // End-to-end tests run without Workers AI: a fixed, recognisable transcript.
-      text = `(test transcript of ${audio.length} bytes)`;
-      model = "stub";
-    } else {
-      const names = await env.DB.prepare("SELECT name FROM foods WHERE user_id = ?1 AND status = 'active' LIMIT 40")
-        .bind(userId)
-        .all<{ name: string }>();
-      const out = await env.AI.run(TRANSCRIBE_MODEL, {
-        audio: toBase64(audio),
-        task: "transcribe",
-        vad_filter: true,
-        // Spelling help for food names Whisper might not know.
-        initial_prompt: ["A note about a meal I just ate.", ...names.results.map((n) => n.name)].join(" "),
-      });
-      text = (out.text ?? "").trim();
-    }
+    ({ text, model } = await whisper(env, userId, new Uint8Array(await obj.arrayBuffer())));
   } catch (e) {
     const msg = String((e as Error).message ?? e).slice(0, 300);
     console.error(`transcribe ${mealId}:`, msg);
@@ -50,6 +33,25 @@ export async function transcribe(env: Env, userId: string, mealId: string): Prom
     .bind(mealId, userId, text, model, new Date().toISOString())
     .run();
   return text;
+}
+
+// Audio to text. Also used for spoken answers and corrections on the API path (D28).
+export async function whisper(env: Env, userId: string, audio: Uint8Array): Promise<{ text: string; model: string }> {
+  if (env.TRANSCRIBE_STUB === "1") {
+    // End-to-end tests run without Workers AI: a fixed, recognisable transcript.
+    return { text: `(test transcript of ${audio.length} bytes)`, model: "stub" };
+  }
+  const names = await env.DB.prepare("SELECT name FROM foods WHERE user_id = ?1 AND status = 'active' LIMIT 40")
+    .bind(userId)
+    .all<{ name: string }>();
+  const out = await env.AI.run(TRANSCRIBE_MODEL, {
+    audio: toBase64(audio),
+    task: "transcribe",
+    vad_filter: true,
+    // Spelling help for food names Whisper might not know.
+    initial_prompt: ["A note about a meal I just ate.", ...names.results.map((n) => n.name)].join(" "),
+  });
+  return { text: (out.text ?? "").trim(), model: TRANSCRIBE_MODEL };
 }
 
 function toBase64(bytes: Uint8Array): string {

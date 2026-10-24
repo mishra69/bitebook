@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { showToast } from "./lib/notify";
 import { ReminderSettings } from "./Reminders";
+import { AutoAnalysis } from "./AutoAnalysis";
 
 type Note = { id: string; body: string };
 type Question = { id: string; topic: string; question: string; answer: string | null; created_at: string };
@@ -133,6 +134,7 @@ export function Memory() {
           </ul>
         </details>
       )}
+      <AutoAnalysis />
       <ReminderSettings />
     </section>
   );

@@ -1,7 +1,7 @@
 // Parsing and validating a pasted (or API) reply (docs/SPEC.md §6, bitebook.reply/1). This
 // file is authoritative for the reply contract. Validation is all-or-nothing: any error
 // means nothing is stored.
-import { REPLY_SCHEMA } from "./prompt";
+import { MAX_QUESTIONS, REPLY_SCHEMA } from "./prompt";
 
 export const CONFIDENCES = ["low", "medium", "high"] as const;
 
@@ -40,6 +40,7 @@ export type Reply = {
   meals: MealResult[];
   remember: RememberChange[];
   asked: { topic: string; question: string; answer: string | null }[];
+  questions: { topic: string; question: string }[]; // API path: asked of the user, answered later (D28)
   summary: { text: string; suggestion: string | null };
 };
 
@@ -188,6 +189,14 @@ export function validateReply(raw: unknown, batch: BatchFacts): { reply: Reply |
     asked.push({ topic: (isObj(q) && str(q.topic)) || question.slice(0, 40), question, answer: isObj(q) ? str(q.answer) || null : null });
   }
 
+  // Same forgiveness for the API path's open questions; the cap is the prompt's.
+  const questions: Reply["questions"] = [];
+  for (const q of Array.isArray(raw.questions) ? raw.questions : []) {
+    const question = isObj(q) ? str(q.question) : null;
+    if (!question || question.startsWith("<") || questions.length >= MAX_QUESTIONS) continue;
+    questions.push({ topic: (isObj(q) && str(q.topic)) || question.slice(0, 40), question });
+  }
+
   const summary = isObj(raw.summary) ? raw.summary : {};
   const reply: Reply = {
     schema: REPLY_SCHEMA,
@@ -196,7 +205,59 @@ export function validateReply(raw: unknown, batch: BatchFacts): { reply: Reply |
     meals,
     remember,
     asked,
+    questions,
     summary: { text: str(summary.text) ?? "", suggestion: str(summary.suggestion) },
   };
   return errors.length ? { reply: null, errors } : { reply, errors };
 }
+
+// The reply as a JSON Schema, for providers that can hold a model to one (OpenRouter's
+// response_format). Strict-mode style: every field required, nullable ones typed as such.
+// Not every model honours it, so validateReply above stays the real check.
+const num = { type: ["number", "null"] };
+const text = { type: ["string", "null"] };
+const object = (properties: Record<string, unknown>) => ({
+  type: "object",
+  additionalProperties: false,
+  required: Object.keys(properties),
+  properties,
+});
+export const REPLY_JSON_SCHEMA = object({
+  schema: { type: "string" },
+  batch_id: { type: "string" },
+  model: text,
+  meals: {
+    type: "array",
+    items: object({
+      key: { type: "string" },
+      skipped: { type: "boolean" },
+      skip_reason: text,
+      description: { type: "string" },
+      kcal: num,
+      protein_g: num,
+      carbs_g: num,
+      fat_g: num,
+      fiber_g: num,
+      confidence: { type: "string", enum: [...CONFIDENCES] },
+      foods_used: { type: "array", items: { type: "string" } },
+      comment: text,
+    }),
+  },
+  remember: {
+    type: "array",
+    items: object({
+      action: { type: "string", enum: ["add", "update", "retire"] },
+      code: text,
+      name: { type: "string" },
+      serving: { type: "string" },
+      kcal: num,
+      protein_g: num,
+      carbs_g: num,
+      fat_g: num,
+      fiber_g: num,
+      reason: text,
+    }),
+  },
+  questions: { type: "array", items: object({ topic: { type: "string" }, question: { type: "string" } }) },
+  summary: object({ text: { type: "string" }, suggestion: text }),
+});

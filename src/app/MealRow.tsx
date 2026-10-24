@@ -37,6 +37,10 @@ export function MealRow({ row }: { row: Row }) {
         <strong>{timeOfDay(rowTakenAt(row))}</strong>
         {type && <span class="chip on small">{type}</span>}
         {local && !local.error && <span class="badge">uploading</span>}
+        {row.kind === "server" && !row.meal.analysis && (row.meal.api?.job?.status === "queued" || row.meal.api?.job?.status === "running") && (
+          <span class="badge">analyzing</span>
+        )}
+        {row.kind === "server" && (row.meal.api?.questions.length ?? 0) > 0 && <span class="badge question">❓ question</span>}
         {local?.error && (
           <button class="badge bad" onClick={() => retryMeal(local)} title={local.error}>
             failed · retry

@@ -4,6 +4,7 @@ import { isUlid } from "../shared/ulid";
 import { MAX_VOICE_MS, MEAL_TYPES, photoKey, voiceKey, type Analysis, type DeletedMeal, type Meal, type NewMeal, type VoiceNote } from "../shared/meals";
 import { transcribe } from "./transcribe";
 import { PURGE_AFTER_DAYS } from "./purge";
+import { analysisState, enqueue } from "./analyze";
 
 // Uploads happen in two steps so a flaky connection never leaves a half-saved meal:
 // each photo's two files are PUT on their own (retryable, idempotent), then the meal
@@ -122,6 +123,9 @@ meals.post("/meals", async (c) => {
   ]);
   // Transcribe after answering: the meal is saved either way, and export retries if needed.
   if (meal.voice) c.executionCtx.waitUntil(transcribe(c.env, user.id, meal.id));
+  // With automatic analysis on, queue it, after the transcript has had time to arrive (D28).
+  const auto = await c.env.DB.prepare("SELECT api_model FROM users WHERE id = ?1").bind(user.id).first<{ api_model: string | null }>();
+  if (auto?.api_model) await enqueue(c.env.DB, user.id, meal.id, auto.api_model, "analyze", null, meal.voice ? 30_000 : 0);
   return c.json({ ok: true }, 201);
 });
 
@@ -143,7 +147,8 @@ meals.get("/meals", async (c) => {
   const next_before = rows.length > limit ? page[page.length - 1].taken_ms : null;
   const withPhotos = await attachPhotos(c.env.DB, user.id, page.map(({ taken_ms, ...m }) => m));
   const latest = await loadAnalyses(c.env.DB, user.id, withPhotos.map((m) => m.id), true);
-  return c.json({ meals: withPhotos.map((m) => ({ ...m, analysis: latest.get(m.id)?.[0] ?? null })), next_before });
+  const api = await analysisState(c.env.DB, user.id, withPhotos.map((m) => m.id));
+  return c.json({ meals: withPhotos.map((m) => ({ ...m, analysis: latest.get(m.id)?.[0] ?? null, api: api.get(m.id) })), next_before });
 });
 
 // GET /api/meals/:id — one meal, for the detail screen.
@@ -160,7 +165,8 @@ meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
   const voice = await c.env.DB.prepare("SELECT duration_ms, transcript, transcript_model FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2")
     .bind(meal.id, user.id)
     .first<VoiceNote>();
-  return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [], voice } });
+  const api = await analysisState(c.env.DB, user.id, [meal.id]);
+  return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [], voice, api: api.get(meal.id) } });
 });
 
 // GET /api/meals/:id/voice — the voice note's audio, for playback.

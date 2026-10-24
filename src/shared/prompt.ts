@@ -11,7 +11,9 @@ import type { MealType } from "./meals";
 // prompt/7 (2026-10-23): fiber, per meal and per remembered food (D22).
 // prompt/8 (2026-10-23): meals added afterwards without a photo, from a description (D24).
 // prompt/9 (2026-10-23): a readable copy of the whole reply before the JSON block (D26).
-export const PROMPT_VERSION = "prompt/9";
+// prompt/10 (2026-10-24): an API variant (D28): no chat, so questions go in the reply and
+// are answered in the app; a revision carries the earlier estimate and the user's words.
+export const PROMPT_VERSION = "prompt/10";
 export const MAX_QUESTIONS = 2;
 export const ASKED_MAX_LINES = 60;
 export const REPLY_SCHEMA = "bitebook.reply/1";
@@ -151,6 +153,9 @@ export const REPLY_EXAMPLE = {
 
 export type PromptInput = {
   batchId: string;
+  channel?: "chat" | "api"; // chat by default
+  // A re-run of one meal after the user answered its questions or corrected it (D28).
+  revision?: { key: string; previous: unknown; input: string };
   notes: string[];
   foods: RememberedFood[];
   digest: DigestEntry[]; // newest first
@@ -165,6 +170,7 @@ export function askedLine(q: AskedQuestion): string {
 }
 
 export function buildPrompt(p: PromptInput): string {
+  const api = p.channel === "api";
   const notes = p.notes.map((n) => n.trim()).filter(Boolean);
   const digest = p.digest.slice(0, DIGEST_MAX_LINES);
   const asked = p.asked.slice(0, ASKED_MAX_LINES);
@@ -208,12 +214,8 @@ ${asked.length ? asked.map(askedLine).join("\n") : "—"}
 ## New meals (times are my local time)
 ${meals}
 
-## What to do
-0. Questions come first, and usually there are none. Ask only if an answer would change
-   an estimate by roughly 100 kcal or more, or would matter for future meals. Ask at most
-   ${MAX_QUESTIONS}, together in one message, then wait for my answers before writing the JSON.
-   Never ask anything listed under "Questions already asked". If I skip a question or
-   don't know, use your best assumption and say so in the comment.
+${p.revision ? revisionBlock(p.revision) : ""}## What to do
+${api ? API_QUESTIONS : CHAT_QUESTIONS}
 1. For each meal: describe it in a few words and estimate kcal, protein, carbs, fat and
    fiber (grams) for what was eaten. If a nutrition label or package is visible, use it. When you
    recognize a remembered food, use its values and list its code in foods_used. Stay
@@ -237,7 +239,46 @@ ${meals}
    portion), suggest I add it to my notes in Bitebook: you can't save notes yourself,
    and every future batch sees them.
 
-Set "model" to your own model name and version as you know it, or null if you don't know.
+${api ? apiReplyFormat(p.batchId) : chatReplyFormat(p.batchId)}`;
+}
+
+const CHAT_QUESTIONS = `0. Questions come first, and usually there are none. Ask only if an answer would change
+   an estimate by roughly 100 kcal or more, or would matter for future meals. Ask at most
+   ${MAX_QUESTIONS}, together in one message, then wait for my answers before writing the JSON.
+   Never ask anything listed under "Questions already asked". If I skip a question or
+   don't know, use your best assumption and say so in the comment.`;
+
+// On the API path nobody is there to answer before the reply (D28).
+const API_QUESTIONS = `0. I'm not here to answer questions before you reply, so always give your best estimate
+   now and state your assumptions in the comment. If an answer would change an estimate
+   by roughly 100 kcal or more, or would matter for future meals, add up to ${MAX_QUESTIONS} short
+   questions to "questions" (usually there are none). I'll answer them in my app and you'll
+   get to revise. Never ask anything listed under "Questions already asked".`;
+
+function revisionBlock(r: NonNullable<PromptInput["revision"]>): string {
+  return `## Revising meal ${r.key}
+You estimated this meal before. Your earlier estimate:
+${JSON.stringify(r.previous)}
+What I've told you since (answers to your questions, or a correction):
+${r.input.trim()}
+Revise the estimate with this. Keep whatever still holds, and say in the comment what
+changed. Ask nothing that's answered here.
+
+`;
+}
+
+function apiReplyFormat(batchId: string): string {
+  const { asked: _asked, ...rest } = REPLY_EXAMPLE;
+  const example = { ...rest, batch_id: batchId, questions: [{ topic: "<short topic>", question: "<a question for me>" }] };
+  return `Set "model" to your own model name and version as you know it, or null if you don't know.
+"questions" is [] unless you need to ask something. Every meal key above must appear
+exactly once in "meals". Reply with ONLY the JSON object, in exactly this format:
+${JSON.stringify(example, null, 2)}
+`;
+}
+
+function chatReplyFormat(batchId: string): string {
+  return `Set "model" to your own model name and version as you know it, or null if you don't know.
 In "asked", list the questions you asked me in this chat with my answers (answer null if I
 didn't answer); it's [] when you asked nothing. Every meal key above must appear exactly
 once in "meals".
@@ -251,7 +292,7 @@ Your final reply has two parts, and nothing else:
    then short lines); no tables and no code blocks.
 2. One JSON code block, with exactly the same content, in exactly this format:
 \`\`\`json
-${JSON.stringify({ ...REPLY_EXAMPLE, batch_id: p.batchId }, null, 2)}
+${JSON.stringify({ ...REPLY_EXAMPLE, batch_id: batchId }, null, 2)}
 \`\`\`
 If I ask for a correction, change both parts the same way.
 `;

@@ -6,6 +6,7 @@ import { meals } from "./meals";
 import { memory } from "./memory";
 import { purgeDeleted } from "./purge";
 import { push, runReminders } from "./push";
+import { analysis, images, runDueJobs } from "./analyze";
 
 export type AppEnv = {
   Bindings: Env & { AUTH_DISABLED?: string; SESSION_SECRET?: string };
@@ -35,10 +36,12 @@ api.route("/", batches);
 api.route("/", memory);
 api.route("/", diag);
 api.route("/", push);
+api.route("/", analysis);
 
 const app = new Hono<AppEnv>();
 app.route("/api", api);
 app.route("/auth", auth);
+app.route("/img", images); // signed photo links for the model provider (no session)
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 // Unexpected errors: log the details (Workers Logs keeps them), answer without them.
 app.onError((err, c) => {
@@ -49,6 +52,8 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(event.cron === "17 3 * * *" ? purgeDeleted(env) : runReminders(env, event.scheduledTime));
+    if (event.cron === "17 3 * * *") return ctx.waitUntil(purgeDeleted(env));
+    ctx.waitUntil(runDueJobs(env, env.APP_ORIGIN));
+    ctx.waitUntil(runReminders(env, event.scheduledTime));
   },
 } satisfies ExportedHandler<Env>;

@@ -11,6 +11,7 @@ import {
   photoFileName,
   type AskedQuestion,
   type DigestEntry,
+  type PromptInput,
   type RememberedFood,
 } from "../shared/prompt";
 import { extractJson, validateReply } from "../shared/reply";
@@ -41,7 +42,9 @@ const PENDING_SQL = `
   WHERE m.user_id = ?1 AND m.deleted_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0)
     AND NOT EXISTS (SELECT 1 FROM batches b, json_each(b.key_map) k
-                    WHERE b.user_id = ?1 AND b.status = 'open' AND k.value = m.id)`;
+                    WHERE b.user_id = ?1 AND b.status = 'open' AND k.value = m.id)
+    AND NOT EXISTS (SELECT 1 FROM analysis_jobs j
+                    WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running'))`;
 
 batches.get("/batches/pending-meals", async (c) => {
   const user = c.get("user");
@@ -69,27 +72,39 @@ batches.post("/batches", async (c) => {
   const photoCount = meals.reduce((n, m) => n + m.photos.length, 0);
   if (photoCount > MAX_PHOTOS_PER_BATCH) return c.json({ error: "too_many_photos", max: MAX_PHOTOS_PER_BATCH }, 413);
 
+  const id = await buildBatch(c.env, user.id, meals, { channel: "chat" });
+  const [batch] = await viewBatches(c.env.DB, user.id, "id = ?2", id);
+  return c.json({ batch }, 201);
+});
+
+// Freezes meals into a batch with its prompt: what both paths hand to a model (D6, D28).
+export async function buildBatch(
+  env: Env,
+  userId: string,
+  meals: Meal[],
+  opts: { channel: "chat" | "api"; revision?: PromptInput["revision"] },
+): Promise<string> {
   // Voice notes: retry any transcription that hasn't succeeded yet, then use the text.
-  const { results: voiceRows } = await c.env.DB.prepare(
+  const { results: voiceRows } = await env.DB.prepare(
     "SELECT meal_id, transcript FROM voice_notes WHERE user_id = ?1 AND meal_id IN (SELECT value FROM json_each(?2))",
   )
-    .bind(user.id, JSON.stringify(ids))
+    .bind(userId, JSON.stringify(meals.map((m) => m.id)))
     .all<{ meal_id: string; transcript: string | null }>();
   const voice = new Map<string, string | null>();
-  for (const v of voiceRows) voice.set(v.meal_id, v.transcript ?? (await transcribe(c.env, user.id, v.meal_id)));
+  for (const v of voiceRows) voice.set(v.meal_id, v.transcript ?? (await transcribe(env, userId, v.meal_id)));
 
   const [notes, foods, digest, asked] = await Promise.all([
-    c.env.DB.prepare("SELECT body FROM notes WHERE user_id = ?1 ORDER BY created_at").bind(user.id).all<{ body: string }>(),
-    c.env.DB.prepare(
+    env.DB.prepare("SELECT body FROM notes WHERE user_id = ?1 ORDER BY created_at").bind(userId).all<{ body: string }>(),
+    env.DB.prepare(
       "SELECT code, name, serving, kcal, protein_g, carbs_g, fat_g, fiber_g FROM foods WHERE user_id = ?1 AND status = 'active' ORDER BY CAST(substr(code, 2) AS INTEGER)",
     )
-      .bind(user.id)
+      .bind(userId)
       .all<RememberedFood>(),
-    loadDigest(c.env.DB, user.id),
-    c.env.DB.prepare(
+    loadDigest(env.DB, userId),
+    env.DB.prepare(
       "SELECT topic, question, answer, created_at AS asked_at FROM questions WHERE user_id = ?1 ORDER BY created_at DESC LIMIT 60",
     )
-      .bind(user.id)
+      .bind(userId)
       .all<AskedQuestion>(),
   ]);
 
@@ -97,6 +112,8 @@ batches.post("/batches", async (c) => {
   const keyMap = Object.fromEntries(meals.map((m, i) => [batchKey(i), m.id]));
   const prompt = buildPrompt({
     batchId: id,
+    channel: opts.channel,
+    revision: opts.revision,
     notes: notes.results.map((n) => n.body),
     foods: foods.results,
     digest,
@@ -104,22 +121,21 @@ batches.post("/batches", async (c) => {
     asked: asked.results,
     meals: meals.map((m, i) => ({ key: batchKey(i), ...m, voice: voice.has(m.id) ? { transcript: voice.get(m.id) ?? null } : null })),
   });
-  await c.env.DB.prepare(
-    `INSERT INTO batches (id, user_id, created_at, prompt_version, prompt_text, key_map, active_codes)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+  await env.DB.prepare(
+    `INSERT INTO batches (id, user_id, created_at, prompt_version, prompt_text, key_map, active_codes, channel)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
   )
-    .bind(id, user.id, new Date().toISOString(), PROMPT_VERSION, prompt, JSON.stringify(keyMap), JSON.stringify(foods.results.map((f) => f.code)))
+    .bind(id, userId, new Date().toISOString(), PROMPT_VERSION, prompt, JSON.stringify(keyMap), JSON.stringify(foods.results.map((f) => f.code)), opts.channel)
     .run();
-  const [batch] = await viewBatches(c.env.DB, user.id, "id = ?2", id);
-  return c.json({ batch }, 201);
-});
+  return id;
+}
 
 // GET /api/batches?status=open — open batches, ready to hand over (again) or import.
 batches.get("/batches", async (c) => {
   const user = c.get("user");
   const status = c.req.query("status") ?? "open";
   if (!["open", "imported", "abandoned"].includes(status)) return c.json({ error: "bad_request" }, 400);
-  return c.json({ batches: await viewBatches(c.env.DB, user.id, "status = ?2", status) });
+  return c.json({ batches: await viewBatches(c.env.DB, user.id, "status = ?2 AND channel = 'chat'", status) });
 });
 
 // POST /api/batches/:id/import {reply, model} — the pasted reply, validated all-or-nothing
@@ -130,30 +146,43 @@ batches.post("/batches/:id/import", async (c) => {
   const model = typeof body.model === "string" ? body.model.trim() : "";
   if (typeof body.reply !== "string" || !body.reply.trim()) return c.json({ errors: ["Paste the reply first."] }, 422);
   if (!model || model.length > 80) return c.json({ errors: ["Say which model wrote the reply."] }, 422);
+  const r = await importReply(c.env.DB, user.id, c.req.param("id"), body.reply, model);
+  return c.json(r.body, r.status);
+});
 
-  const batch = await c.env.DB.prepare(
-    "SELECT id, status, prompt_version, key_map, active_codes FROM batches WHERE id = ?1 AND user_id = ?2",
-  )
-    .bind(c.req.param("id"), user.id)
-    .first<{ id: string; status: string; prompt_version: string; key_map: string; active_codes: string }>();
-  if (!batch) return c.json({ errors: ["This batch doesn't exist."] }, 404);
-  if (batch.status !== "open") return c.json({ errors: [`This batch is already ${batch.status}.`] }, 409);
+export type RunUsage = { input_tokens: number | null; output_tokens: number | null; cost_usd: number | null; latency_ms: number };
+
+// Validates a reply against its batch and stores it in one transaction: the analyses, the
+// remembered-food changes and the questions, and closes the batch. Both paths end here.
+export async function importReply(
+  db: D1Database,
+  userId: string,
+  batchId: string,
+  replyText: string,
+  model: string,
+  usage?: RunUsage, // API path: what the run cost
+): Promise<{ status: 200 | 404 | 409 | 422; body: Record<string, unknown> }> {
+  const batch = await db
+    .prepare("SELECT id, status, channel, prompt_version, key_map, active_codes FROM batches WHERE id = ?1 AND user_id = ?2")
+    .bind(batchId, userId)
+    .first<{ id: string; status: string; channel: "chat" | "api"; prompt_version: string; key_map: string; active_codes: string }>();
+  if (!batch) return { status: 404, body: { errors: ["This batch doesn't exist."] } };
+  if (batch.status !== "open") return { status: 409, body: { errors: [`This batch is already ${batch.status}.`] } };
   const keyMap = JSON.parse(batch.key_map) as Record<string, string>;
 
   let raw: unknown;
   try {
-    raw = extractJson(body.reply);
+    raw = extractJson(replyText);
   } catch (e) {
-    return c.json({ errors: [(e as Error).message] }, 422);
+    return { status: 422, body: { errors: [(e as Error).message] } };
   }
   const { reply, errors } = validateReply(raw, { id: batch.id, keys: Object.keys(keyMap), activeCodes: JSON.parse(batch.active_codes) });
-  if (!reply) return c.json({ errors }, 422);
+  if (!reply) return { status: 422, body: { errors } };
 
   // A meal purged since batching has no row to hang an analysis on; skip just that one.
-  const { results: existing } = await c.env.DB.prepare(
-    "SELECT id FROM meals WHERE user_id = ?1 AND id IN (SELECT value FROM json_each(?2))",
-  )
-    .bind(user.id, JSON.stringify(Object.values(keyMap)))
+  const { results: existing } = await db
+    .prepare("SELECT id FROM meals WHERE user_id = ?1 AND id IN (SELECT value FROM json_each(?2))")
+    .bind(userId, JSON.stringify(Object.values(keyMap)))
     .all<{ id: string }>();
   const present = new Set(existing.map((m) => m.id));
 
@@ -163,14 +192,17 @@ batches.post("/batches/:id/import", async (c) => {
     const mealId = keyMap[m.key];
     if (!present.has(mealId)) continue;
     stmts.push(
-      c.env.DB.prepare(
-        `INSERT INTO analyses (id, user_id, meal_id, batch_id, model, prompt_version, schema_version, skipped, payload, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
-      ).bind(ulid(), user.id, mealId, batch.id, model, batch.prompt_version, reply.schema, m.skipped ? 1 : 0, JSON.stringify(m), now),
+      db
+        .prepare(
+          `INSERT INTO analyses (id, user_id, meal_id, batch_id, model, prompt_version, schema_version, skipped, payload, created_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+        )
+        .bind(ulid(), userId, mealId, batch.id, model, batch.prompt_version, reply.schema, m.skipped ? 1 : 0, JSON.stringify(m), now),
     );
   }
-  const maxCode = await c.env.DB.prepare("SELECT MAX(CAST(substr(code, 2) AS INTEGER)) AS n FROM foods WHERE user_id = ?1")
-    .bind(user.id)
+  const maxCode = await db
+    .prepare("SELECT MAX(CAST(substr(code, 2) AS INTEGER)) AS n FROM foods WHERE user_id = ?1")
+    .bind(userId)
     .first<{ n: number | null }>();
   let next = (maxCode?.n ?? 0) + 1;
   const remembered: { action: string; code: string; name: string }[] = [];
@@ -179,53 +211,68 @@ batches.post("/batches/:id/import", async (c) => {
       const code = `F${next++}`;
       remembered.push({ action: "add", code, name: r.name });
       stmts.push(
-        c.env.DB.prepare(
-          `INSERT INTO foods (id, user_id, code, name, serving, kcal, protein_g, carbs_g, fat_g, fiber_g, source_batch_id, created_at, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)`,
-        ).bind(ulid(), user.id, code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, r.fiber_g, batch.id, now),
+        db
+          .prepare(
+            `INSERT INTO foods (id, user_id, code, name, serving, kcal, protein_g, carbs_g, fat_g, fiber_g, source_batch_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)`,
+          )
+          .bind(ulid(), userId, code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, r.fiber_g, batch.id, now),
       );
     } else if (r.action === "update") {
       remembered.push({ action: "update", code: r.code!, name: r.name });
       stmts.push(
-        c.env.DB.prepare(
-          `UPDATE foods SET name = ?3, serving = ?4, kcal = ?5, protein_g = ?6, carbs_g = ?7, fat_g = ?8,
-             fiber_g = ?9, source_batch_id = ?10, updated_at = ?11 WHERE user_id = ?1 AND code = ?2`,
-        ).bind(user.id, r.code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, r.fiber_g, batch.id, now),
+        db
+          .prepare(
+            `UPDATE foods SET name = ?3, serving = ?4, kcal = ?5, protein_g = ?6, carbs_g = ?7, fat_g = ?8,
+               fiber_g = ?9, source_batch_id = ?10, updated_at = ?11 WHERE user_id = ?1 AND code = ?2`,
+          )
+          .bind(userId, r.code, r.name, r.serving, r.kcal, r.protein_g, r.carbs_g, r.fat_g, r.fiber_g, batch.id, now),
       );
     } else {
       remembered.push({ action: "retire", code: r.code!, name: r.name });
       stmts.push(
-        c.env.DB.prepare(
-          "UPDATE foods SET status = 'retired', retired_at = ?3, source_batch_id = ?4, updated_at = ?3 WHERE user_id = ?1 AND code = ?2",
-        ).bind(user.id, r.code, now, batch.id),
+        db
+          .prepare("UPDATE foods SET status = 'retired', retired_at = ?3, source_batch_id = ?4, updated_at = ?3 WHERE user_id = ?1 AND code = ?2")
+          .bind(userId, r.code, now, batch.id),
       );
     }
   }
-  for (const q of reply.asked) {
+  // Chat: questions already asked and answered there. API: questions waiting for the user,
+  // tied to the batch's meal so the meal screen can show them (D28).
+  const questionMeal = batch.channel === "api" ? Object.values(keyMap)[0] : null;
+  const questions = batch.channel === "api" ? reply.questions.map((q) => ({ ...q, answer: null })) : reply.asked;
+  for (const q of questions) {
     stmts.push(
-      c.env.DB.prepare(
-        "INSERT INTO questions (id, user_id, batch_id, topic, question, answer, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-      ).bind(ulid(), user.id, batch.id, q.topic, q.question, q.answer, now),
+      db
+        .prepare("INSERT INTO questions (id, user_id, batch_id, topic, question, answer, created_at, meal_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
+        .bind(ulid(), userId, batch.id, q.topic, q.question, q.answer, now, questionMeal),
     );
   }
   stmts.push(
-    c.env.DB.prepare(
-      `UPDATE batches SET status = 'imported', reply_raw = ?3, reply_model = ?4, summary = ?5, imported_at = ?6,
-         reply_model_reported = ?7
-       WHERE id = ?1 AND user_id = ?2`,
-    ).bind(batch.id, user.id, body.reply, model, JSON.stringify(reply.summary), now, reply.model),
+    db
+      .prepare(
+        `UPDATE batches SET status = 'imported', reply_raw = ?3, reply_model = ?4, summary = ?5, imported_at = ?6,
+           reply_model_reported = ?7, input_tokens = ?8, output_tokens = ?9, cost_usd = ?10, latency_ms = ?11
+         WHERE id = ?1 AND user_id = ?2`,
+      )
+      .bind(batch.id, userId, replyText, model, JSON.stringify(reply.summary), now, reply.model,
+        usage?.input_tokens ?? null, usage?.output_tokens ?? null, usage?.cost_usd ?? null, usage?.latency_ms ?? null),
   );
-  await c.env.DB.batch(stmts); // one transaction: all of it lands, or none of it
+  await db.batch(stmts); // one transaction: all of it lands, or none of it
 
-  return c.json({
-    ok: true,
-    analyzed: reply.meals.filter((m) => !m.skipped).length,
-    skipped: reply.meals.filter((m) => m.skipped).map((m) => ({ key: m.key, reason: m.skip_reason })),
-    remembered,
-    asked: reply.asked,
-    summary: reply.summary,
-  });
-});
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      analyzed: reply.meals.filter((m) => !m.skipped).length,
+      skipped: reply.meals.filter((m) => m.skipped).map((m) => ({ key: m.key, reason: m.skip_reason })),
+      remembered,
+      asked: reply.asked,
+      questions: reply.questions,
+      summary: reply.summary,
+    },
+  };
+}
 
 // POST /api/batches/:id/abandon — gives up on an open batch; its meals become pending again.
 batches.post("/batches/:id/abandon", async (c) => {

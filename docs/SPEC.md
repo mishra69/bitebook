@@ -8,7 +8,7 @@ built, and **Plan** sections expire.
 
 ## 1. Purpose and principles
 
-> **Tier:** Core · **Verified:** 2026-10-23
+> **Tier:** Core · **Verified:** 2026-10-24
 
 Bitebook logs a photo of every meal with as little friction as possible, so that the
 logging actually happens. A meal that wasn't photographed can be described afterwards
@@ -20,10 +20,11 @@ model analyses and the user's corrections.
 2. **Photos never touch the camera roll.** They live only in Bitebook's storage.
 3. **Nothing is lost.** A photo is "saved" only once the server has stored it. Until then
    it stays queued on the device and is shown as pending.
-4. **The human is the API by default.** The app exports batches for a chatbot and imports
-   the replies. An optional API path can run the same batch directly (see D6). Both paths
-   share one batch, prompt and reply contract, and go through the same validator. The
-   API path is a different way to deliver the batch, not a separate feature.
+4. **Two ways to analyze, one contract.** The chat handoff (the human is the API) exports
+   batches for a chatbot and imports the replies. The API path analyzes each new meal
+   automatically through OpenRouter (D27, D28). Both share one batch, prompt and reply
+   contract, and go through the same validator. The API path relies only on what any
+   vision model offers, so changing models is a setting.
 5. **Within a meal, history is append-only.** Analyses and corrections are never edited
    or removed. Each analysis records the model, the prompt version and the date (see D5).
    A whole meal can be deleted deliberately. It is restorable for 30 days, then purged
@@ -31,8 +32,8 @@ model analyses and the user's corrections.
 6. **The corpus stays portable.** Everything can be exported as plain files (JPEG and JSON)
    without Bitebook running.
 7. **It runs on the free tier.** It stays within Cloudflare's free limits for one user.
-   The API path is the only thing that can cost money. It is off until a key is
-   configured, and every run shows its cost estimate before it is sent.
+   The API path is the only thing that costs money. It is off until the user turns it
+   on, and every run's cost is recorded and shown per day (D28).
 8. **Built for one user, ready for more.** Today only allowlisted emails can sign in.
    Every row and every stored photo belongs to a user, and every query is scoped to the
    signed-in user, so opening it up later is a config change, not a migration (see D9).
@@ -50,22 +51,23 @@ model analyses and the user's corrections.
 
 ## 2. Architecture
 
-> **Tier:** Core · **Verified:** 2026-10-17
+> **Tier:** Core · **Verified:** 2026-10-24
 
 ```
 iPhone (PWA, home-screen app)
   ├─ IndexedDB: upload queue only (not the source of truth)
   └─ HTTPS ──> Cloudflare Worker (serves static PWA + JSON API)
-                 ├─ D1: meals, photos, batches, analyses, corrections
-                 ├─ R2: originals/ and display/ images
-                 └─ (optional) LLM provider API, for the API path
+                 ├─ D1: meals, photos, batches, analyses, questions, jobs
+                 ├─ R2: originals/, display/ images and voice/ notes
+                 ├─ Workers AI: Whisper, for voice notes
+                 └─ OpenRouter (any vision model), for the API path
 Laptop
   └─ roll-off script (rclone + Worker admin API) ──> local disk
 ```
 
 ## 3. Core flows
 
-> **Tier:** Core · **Verified:** 2026-10-23
+> **Tier:** Core · **Verified:** 2026-10-24
 
 **Capture.** Tap "New meal" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
@@ -93,8 +95,11 @@ description only (D24).
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
 hands the images and the prompt to the chatbot. The batch is stored as "open".
-Alternatively, **Run via API** sends the same batch from the Worker. The reply goes straight
-into Import, with the model filled in automatically.
+
+**Automatic analysis (the API path).** When it's on, each saved meal is analyzed a minute
+or so later through OpenRouter, as a one-meal batch with the API variant of the prompt,
+and imported through the same validator. If the model needs to know something, its
+questions wait on the meal; answering them re-estimates it (D28).
 
 **Import.** Paste the reply and select which model produced it. The app validates the reply against
 the batch (section 6) and, if it is valid, stores one analysis per meal and marks the batch as
@@ -114,11 +119,12 @@ estimates. The app records the questions so they're never asked again.
 
 The user can view remembered foods and retire one that's wrong, but never has to.
 
-**Correct.** On any meal, the user can fix items, portions or totals. Each correction is
-stored as a new row that references the analysis it corrects.
+**Correct.** On an analyzed meal, "Correct this" takes a typed or spoken correction ("it
+was paneer", "I ate half"), and the model re-estimates the meal with it. The new estimate
+is added; the earlier one is kept (D28).
 
-**Re-analyze.** Meals that have already been analyzed can be exported again in a new batch,
-for example to compare models. This adds analyses and never replaces them.
+**Re-analyze.** Answers and corrections add analyses and never replace them. Comparing
+models on the same meals works the same way, later.
 
 **Delete.** A meal that hasn't uploaded yet is removed from the phone, after a
 confirmation. A saved meal disappears from the app and from exports at once, with an
@@ -129,14 +135,15 @@ rows and files for good.
 
 ## 4. Data model (D1)
 
-> **Tier:** Contract · **Verified:** 2026-10-23 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-24 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
 > `batches`, `analyses`, `foods` and `notes` (0006), `questions` (0008), `photos.taken_at` (0009),
 > `voice_notes` (0010), `foods.fiber_g` (0011),
 > `diag_events` (0012, the phone's upload log, D23), `push_subscriptions` and
-> `reminders_sent` (0013, D25).
+> `reminders_sent` (0013, D25), the API path's `users.api_model`, batch cost columns,
+> open questions and `analysis_jobs` (0014, D28).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -188,13 +195,14 @@ is derived, not stored.
 
 ## 5. Storage layout (R2)
 
-> **Tier:** Contract · **Verified:** 2026-10-21 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-24 · **Expires:** 2027-04-17
 >
 > Implemented in `photoKey()` in `src/shared/meals.ts`, which is authoritative.
 
 Layout: `users/<user_id>/originals/YYYY/MM/<photo_id>.<ext>`,
 `users/<user_id>/display/YYYY/MM/<photo_id>.jpg` and, for voice notes,
-`users/<user_id>/voice/YYYY/MM/<meal_id>.<m4a|webm>` (`voiceKey()`). Everything a user owns sits under
+`users/<user_id>/voice/YYYY/MM/<meal_id>.<m4a|webm>` (`voiceKey()`). Spoken answers and
+corrections on the API path are kept as `users/<user_id>/voice/replies/<id>.<ext>`. Everything a user owns sits under
 their prefix, so one user's photos can be exported or deleted as a unit. The month
 comes from the meal's local `taken_at`, so roll-off can select by prefix.
 
@@ -207,12 +215,12 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 
 ## 6. Prompt and reply contract
 
-> **Tier:** Contract · **Verified:** 2026-10-23 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-24 · **Expires:** 2027-04-17
 >
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
 
-### Prompt (`prompt/9`)
+### Prompt (`prompt/10`)
 
 Implemented in `src/shared/prompt.ts`, which is authoritative (template, digest line,
 trend, batch keys, photo file names); `tests/unit/prompt.test.ts` pins its shape. What the
@@ -242,6 +250,9 @@ code can't say:
 - A meal without a photo (D24) is listed as "no photo (added afterwards from my
   description)" with its time as "~13:00", and the model is told to estimate from the
   words alone and lower its confidence.
+- **The API variant** (`channel: "api"`, D28) differs only at the ends: questions go into
+  the reply's `questions` list instead of the chat, the reply is the JSON alone, and a
+  revision adds the earlier estimate and the user's answers or correction.
 - The reply opens with a readable copy of the whole JSON (not a summary), in short
   Markdown lines a phone can show without sideways scrolling, then the JSON block (D26).
 - Estimates include fiber since `prompt/7`: per meal, per remembered food, and as a daily
@@ -267,6 +278,9 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
   self-report in `batches.reply_model_reported`. Models misname themselves often enough
   that the self-report is never the record on its own (D17).
 - A skipped meal gets an analysis row with `skipped = 1` and stays ready to analyze.
+- `questions` (API path only): up to two questions for the user, stored unanswered on the
+  meal. The JSON Schema in `reply.ts` is sent as `response_format` where a model supports
+  it; the validator doesn't depend on that (D27).
 - `fiber_g` is optional (D22): replies from before `prompt/7`, or from a model that leaves
   it out, still import, with fiber unknown.
 - `asked` is history, not data the estimates depend on, so it never fails an import: a
@@ -274,7 +288,7 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
 
 ## 7. Capture: what still needs an iPhone
 
-> **Tier:** Plan · **Verified:** 2026-10-23 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-24 · **Expires:** 2026-12-17
 
 Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). Checked on
 the iPhone by 2026-10-23: reload behind the camera, offline save then upload on
@@ -285,6 +299,10 @@ microphone again on later launches of the home-screen app; nothing in the app ca
 that.
 
 Still to check, then delete this section:
+
+- **The API path trial:** turn it on in Memory → Automatic analysis. Do estimates arrive
+  a minute or so after saving? Are they as good as the chat's? Do questions and "Correct
+  this" (typed and spoken) feel natural? What does Memory say it costs per day?
 
 - **Reminders:** turn them on from the card on Today (home-screen app only), then
   Memory → Reminders → "Send a test". Does it arrive, and does tapping it open
@@ -336,21 +354,13 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 ## 9a. API path
 
-> **Tier:** Plan · **Verified:** 2026-10-17 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-24 · **Expires:** 2027-01-17
 
-- `POST /api/batches/:id/run` with `{ model }`. The Worker loads the display copies from R2,
-  sends the stored `prompt_text` and the images in a single request, and passes the
-  response text to the same import validator. It sets `channel = 'api'`, and
-  `reply_model` comes from the provider's response, not from user input.
-- The provider key is stored as a Worker secret, never on the device. Providers sit behind a
-  small adapter (`buildRequest`, `extractText`) so another vendor can be added for model
-  comparisons. Anthropic is the first.
-- Before sending, the app shows an estimated cost (images and prompt tokens) and needs a
-  confirmation tap. There is no automatic or scheduled run.
-- If the request fails or the reply is invalid, the batch stays open and the raw response is kept
-  for debugging. The user can retry or fall back to the chat handoff.
-- Large batches may need splitting to stay within provider request limits. Measure this
-  before designing around it.
+Built: `src/worker/analyze.ts` (queue, OpenRouter call, signed photo links, routes),
+`src/app/ApiPanel.tsx` and `src/app/AutoAnalysis.tsx`. Why it's shaped this way: D27
+and D28. The trial (from 2026-10-24, a week or two) answers three questions: is it as
+good as the chat, what does it cost per person per day (Memory shows it), and is it
+easy enough for family members.
 
 ## 10. Screens
 
@@ -364,24 +374,26 @@ API" on a batch, and:
 
 ## 11. Build order
 
-> **Tier:** Plan · **Verified:** 2026-10-23 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-24 · **Expires:** 2027-01-17
 
 *Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19),
-voice notes (D21), fiber (D22), missed meals without a photo (D24) and reminders (D25).
+voice notes (D21), fiber (D22), missed meals without a photo (D24), reminders (D25) and the
+API path with questions and corrections (D27, D28), which moved ahead of the rest on
+2026-10-24.
 The remaining on-device checks for capture are in §7.*
 
-7. **Upload draft photos as they're taken**, so Save is instant and photos survive a
+7. **Apple Health sync** (added 2026-10-23, not designed yet). After an analysis, write each
+   meal's energy, protein, carbs, fat and fiber to Apple Health as dietary samples at the
+   meal's time. A web app can't write to HealthKit, so the likely route is an iOS
+   Shortcut: it fetches newly analyzed meals from a Bitebook endpoint (with a long-lived
+   token made for it, since Shortcuts can't do Google sign-in) and logs them with "Log
+   Health Sample". The endpoint must hand each meal over once, because a Shortcut can't
+   delete samples it already wrote.
+8. **Upload draft photos as they're taken**, so Save is instant and photos survive a
    lost phone mid-meal. Needs a nightly cleanup of R2 files no saved meal refers to
-   (discarded drafts).
-8. The roll-off script.
-9. The API path (optional; it reuses everything from steps 4–5).
-10. **Apple Health sync** (added 2026-10-23, not designed yet). After an import, write each
-    analyzed meal's energy, protein, carbs, fat (and fiber, if tracked) to Apple Health as
-    dietary samples at the meal's time. A web app can't write to HealthKit, so the likely
-    route is an iOS Shortcut: it fetches newly analyzed meals from a Bitebook endpoint (with
-    a long-lived token made for it, since Shortcuts can't do Google sign-in) and logs them
-    with "Log Health Sample". The endpoint must hand each meal over once, because a
-    Shortcut can't delete samples it already wrote.
+   (discarded drafts). Demoted 2026-10-24: uploads were slow with the app open, so this
+   wouldn't have helped; wait for the upload log (D23) to show why.
+9. The roll-off script (demoted 2026-10-24).
 
 Backlog (corpus only, no effect on nutrition data):
 - **👎 on a bad transcript.** One tap on the meal detail flags a voice note's transcript
@@ -390,8 +402,6 @@ Backlog (corpus only, no effect on nutrition data):
   makes that possible. A better transcript is stored alongside, never fed back into
   past analyses (D21).
 
-Parked: **corrections** (editing an analysis's numbers by hand). Questions in the chat
-(D18) cover most of the need; revisit if real use shows otherwise (D20).
 
 ## 12. Open questions
 

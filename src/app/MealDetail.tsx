@@ -1,18 +1,22 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Analysis, Meal } from "../shared/meals";
 import { mealLabel } from "./MealRow";
+import { ApiPanel } from "./ApiPanel";
 import { deleteSavedMeal } from "./lib/mealsApi";
 import { timeOfDay } from "./lib/time";
 
 export function MealDetail({ id }: { id: string }) {
   const [meal, setMeal] = useState<Meal | null | "missing" | "error">(null);
 
-  useEffect(() => {
-    setMeal(null);
+  const load = () =>
     fetch(`/api/meals/${id}`)
       .then(async (r) => (r.status === 404 ? "missing" : r.ok ? ((await r.json()) as { meal: Meal }).meal : "error"))
       .catch(() => "error" as const)
-      .then(setMeal);
+      .then((m) => setMeal((prev) => (m === "error" && prev && typeof prev === "object" ? prev : m))); // keep showing it through a failed refresh
+
+  useEffect(() => {
+    setMeal(null);
+    load();
   }, [id]);
 
   const back = () => (history.length > 1 ? history.back() : (location.hash = "#/timeline"));
@@ -55,6 +59,7 @@ export function MealDetail({ id }: { id: string }) {
         </div>
       )}
       <h3 class="section-title">Analysis</h3>
+      <ApiPanel meal={meal} onChanged={load} />
       {meal.analyses?.length ? meal.analyses.map((a) => <AnalysisCard key={a.id} a={a} />) : <p class="muted">Not analyzed yet.</p>}
       <button class="button secondary danger" onClick={remove}>
         Delete meal
