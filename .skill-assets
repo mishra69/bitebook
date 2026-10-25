@@ -6,4 +6,4 @@ oidc.js          src/worker/lib/oidc.js
 pwa-install.js   public/js/pwa-install.js
 deploy.sh        deploy.sh
 
-# skill-version: 1.0.0
+# skill-version: 1.1.0
