@@ -6,6 +6,7 @@ import { batchKey, photoFileName } from "../shared/prompt";
 import { REPLY_JSON_SCHEMA } from "../shared/reply";
 import { isUlid, ulid } from "../shared/ulid";
 import { whisper } from "./transcribe";
+import { send as sendPush } from "./push";
 import type { ApiState, Meal } from "../shared/meals";
 
 // The API path (D27, D28): each new meal is analyzed automatically through OpenRouter,
@@ -234,6 +235,17 @@ async function runJob(env: ApiEnv, origin: string, job: Job): Promise<string | n
       .bind(batchId, call.text, call.usage.cost_usd, call.usage.input_tokens, call.usage.output_tokens)
       .run();
     throw new Error(`invalid reply: ${JSON.stringify(result.body.errors ?? result.body).slice(0, 300)}`);
+  }
+  // A question is only useful while the meal is fresh in mind: say so on the phone (D30).
+  const questions = (result.body.questions as { question: string }[] | undefined) ?? [];
+  if (questions.length) {
+    const what = `${meal.meal_type ?? "meal"} at ${meal.taken_at.slice(11, 16)}`;
+    await sendPush(env, job.user_id, {
+      title: questions.length === 1 ? "A question about your " + what : `${questions.length} questions about your ${what}`,
+      body: questions[0].question,
+      navigate: `/#/meal/${meal.id}`,
+      tag: `question-${meal.id}`,
+    }).catch((e) => console.error("question push:", e));
   }
   return batchId;
 }

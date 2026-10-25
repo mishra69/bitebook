@@ -7,6 +7,7 @@ import { memory } from "./memory";
 import { purgeDeleted } from "./purge";
 import { push, runReminders } from "./push";
 import { analysis, images, runDueJobs } from "./analyze";
+import { overview } from "./overview";
 
 export type AppEnv = {
   Bindings: Env & { AUTH_DISABLED?: string; SESSION_SECRET?: string };
@@ -37,6 +38,7 @@ api.route("/", memory);
 api.route("/", diag);
 api.route("/", push);
 api.route("/", analysis);
+api.route("/", overview);
 
 const app = new Hono<AppEnv>();
 app.route("/api", api);

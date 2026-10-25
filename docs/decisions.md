@@ -437,3 +437,29 @@ wouldn't fit on a phone. No avatar for now.
 The API path's "Analyze waiting meals" stays (it caught the user's backlog on the first
 day): in Settings it shows only when meals are waiting, with the count, and on Analyze the
 picked meals can go to the API instead of a chat batch.
+
+## D30 · 2026-10-25 · Today's running total, a Trends tab, and Analyze as a screen
+
+With automatic analysis on, the Analyze tab had no job (it still showed the last chat
+batch). The user found a running total useful for deciding on dinner, and wants trends
+over weeks and months (Apple Health would also chart them, but they're cheap to have
+here).
+
+- **Today shows a running total:** kcal, protein, carbs, fat and fiber from each of
+  today's meals' newest estimate, how many are analyzed or still analyzing, and "a usual
+  day": the average of the last 7 days before today whose meals are all analyzed. No
+  targets to set; that can come later.
+- **Trends replaces the Analyze tab** (tabs: Today, Timeline, Trends, Memory). A bar chart
+  of one nutrient per day over 7 or 30 days with the average as a line, the same numbers
+  as a table, and the model's latest comment and suggestion from either path. Days with
+  unanalyzed meals are drawn paler and left out of the average.
+- **Analyze becomes a screen** (`#/analyze`), unchanged. In chat mode Today shows "N meals
+  waiting for analysis → Analyze in a chat" when there are any; Trends links to it in both
+  modes. The tab bar is the same in both modes.
+- **The model's questions are hard to miss:** a push notification when a run asks one
+  ("A question about your lunch at 13:38"), which opens the meal, and a "Waiting for your
+  answer" card at the top of Today until it's answered or skipped. Only questions notify;
+  a notification per finished estimate would be four or more a day.
+
+The analysis itself runs between the Worker and OpenRouter, so the app can be closed once
+the meal has uploaded; only the upload needs the app open (iOS pauses it otherwise).

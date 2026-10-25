@@ -42,7 +42,7 @@ function d1Store(db: D1Database) {
   };
 }
 
-async function send(env: PushEnv, userId: string, n: Notification): Promise<SendResult> {
+export async function send(env: PushEnv, userId: string, n: Notification): Promise<SendResult> {
   if (env.PUSH_STUB === "1") {
     // Tests can't reach a push service: count the devices as if it had worked.
     const devices = await d1Store(env.DB).get(userId);

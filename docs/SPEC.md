@@ -288,7 +288,7 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
 
 ## 7. Capture: what still needs an iPhone
 
-> **Tier:** Plan · **Verified:** 2026-10-24 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-25 · **Expires:** 2026-12-17
 
 Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). Checked on
 the iPhone by 2026-10-23: reload behind the camera, offline save then upload on
@@ -300,6 +300,8 @@ that.
 
 Still to check, then delete this section:
 
+- **Question notifications:** when a run asks something, does the notification arrive, and
+  does it open the meal? Is the "Waiting for your answer" card on Today easy to spot?
 - **The API path trial:** turn it on in ⚙︎ Settings → Automatic analysis. Do estimates arrive
   a minute or so after saving? Are they as good as the chat's? Do questions and "Correct
   this" (typed and spoken) feel natural? What does Memory say it costs per day?
@@ -364,20 +366,22 @@ easy enough for family members.
 
 ## 10. Screens
 
-> **Tier:** Plan · **Verified:** 2026-10-24 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-25 · **Expires:** 2027-01-17
 
-Built (`src/app/`): Today (capture), Timeline, Meal detail with its analyses, questions and
-corrections, Analyze (export and import), Memory, and Settings behind the ⚙︎ in the header
-(D29). Ideas for Settings later: storage usage, abandoning stale open batches.
+Built (`src/app/`): tabs Today (capture, questions waiting, running total, chat-waiting
+card), Timeline, Trends (daily charts, latest comment) and Memory; screens Meal detail
+(analyses, questions, corrections), Analyze (the chat handoff, reached from Today and
+Trends) and Settings (the ⚙︎ in the header). See D29, D30. Ideas for later: storage usage
+in Settings, daily targets for the running total.
 
 ## 11. Build order
 
-> **Tier:** Plan · **Verified:** 2026-10-24 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-25 · **Expires:** 2027-01-17
 
 *Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19),
-voice notes (D21), fiber (D22), missed meals without a photo (D24), reminders (D25) and the
+voice notes (D21), fiber (D22), missed meals without a photo (D24), reminders (D25), the
 API path with questions and corrections (D27, D28), which moved ahead of the rest on
-2026-10-24.
+2026-10-24, and the running total, Trends and question notifications (D30).
 The remaining on-device checks for capture are in §7.*
 
 7. **Apple Health sync** (added 2026-10-23, not designed yet). After an analysis, write each

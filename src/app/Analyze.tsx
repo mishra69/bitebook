@@ -115,6 +115,7 @@ export function Analyze() {
   if (pending === null) return error ? <p class="bad">{error}</p> : <p class="muted">Loading…</p>;
   return (
     <section class="analyze" aria-label="Analyze">
+      <a class="link back" href="#/trends">← Trends</a>
       {error && <p class="bad">{error}</p>}
       {open.map((b) => (
         <BatchCard key={b.id} batch={b} onAbandon={() => abandon(b.id)} onImported={load} />

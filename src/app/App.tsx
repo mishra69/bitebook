@@ -6,6 +6,8 @@ import { MealList } from "./MealList";
 import { Memory } from "./Memory";
 import { ReminderOffer } from "./Reminders";
 import { Settings } from "./Settings";
+import { TodayPanel } from "./TodayPanel";
+import { Trends } from "./Trends";
 import { GoogleSignIn } from "./SignIn";
 import { Timeline } from "./Timeline";
 import { ToastHost } from "./Toast";
@@ -110,17 +112,19 @@ export function App() {
           <nav class="tabs" aria-label="Sections">
             <a href="#/" aria-current={route.name === "today" ? "page" : undefined}>Today</a>
             <a href="#/timeline" aria-current={route.name === "timeline" || route.name === "meal" ? "page" : undefined}>Timeline</a>
-            <a href="#/analyze" aria-current={route.name === "analyze" ? "page" : undefined}>Analyze</a>
+            <a href="#/trends" aria-current={route.name === "trends" || route.name === "analyze" ? "page" : undefined}>Trends</a>
             <a href="#/memory" aria-current={route.name === "memory" ? "page" : undefined}>Memory</a>
           </nav>
           {route.name === "today" && (
             <>
               <Capture userId={user.id} missed={route.missed} />
+              <TodayPanel />
               <ReminderOffer />
               <MealList userId={user.id} />
             </>
           )}
           {route.name === "timeline" && <Timeline userId={user.id} />}
+          {route.name === "trends" && <Trends />}
           {route.name === "analyze" && <Analyze />}
           {route.name === "memory" && <Memory />}
           {route.name === "settings" && <Settings email={user.email} onSignOut={signOut} />}

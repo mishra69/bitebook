@@ -5,6 +5,8 @@
   --card: #ffffff;
   --good: #2e7d32;
   --bad: #c62828;
+  --series-1: #2a78d6; /* chart bars (Trends), validated against --card */
+  --grid: #e6e4de;
   color-scheme: light dark;
   /* Install prompt (pwa-install.js) theming crosses its shadow boundary via these. */
   --pwa-accent: var(--fg);
@@ -19,6 +21,8 @@
     --card: #22231f;
     --good: #81c784;
     --bad: #ef9a9a;
+    --series-1: #3987e5;
+    --grid: #34352f;
   }
 }
 * { box-sizing: border-box; }
@@ -196,3 +200,26 @@ ul { margin: 0; padding-left: 1.2rem; }
 .model-input { display: block; margin-top: 0.3rem; }
 .usage-days { padding-left: 1.1rem; font-size: 0.85rem; color: var(--muted); }
 .badge.question { background: none; border: 1px solid var(--muted); }
+
+/* Today's cards and Trends (D30). */
+.waiting-questions p { margin: 0 0 0.4rem; }
+.waiting-question { display: block; padding: 0.5rem 0; color: var(--fg); text-decoration: none; border-top: 1px solid var(--grid); }
+.day-total p { margin: 0.15rem 0; }
+.chat-waiting { display: block; color: var(--fg); text-decoration: none; margin: 0.5rem 0; }
+.card + .card, .card.day-total, .card.waiting-questions { margin-bottom: 0.6rem; }
+.trends .chips { margin: 0.4rem 0; }
+.chart { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.chart .bar { fill: var(--series-1); }
+.chart .bar.partial { fill-opacity: 0.35; }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .avg { stroke: var(--muted); stroke-width: 1; }
+.chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.chart .hit { fill: transparent; }
+.chart .hit:focus { outline: none; }
+.chart .hit.on { fill: var(--fg); fill-opacity: 0.06; }
+.readout { min-height: 2.6em; margin: 0.25rem 0; }
+.readout strong { font-size: 1.15rem; }
+.trend-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.trend-table td, .trend-table th { padding: 0.25rem 0.3rem; text-align: right; border-bottom: 1px solid var(--grid); }
+.trend-table td:first-child, .trend-table th:first-child { text-align: left; }
+.link.back { display: inline-block; margin-bottom: 0.25rem; }
