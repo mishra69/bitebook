@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { dayWindow, localDate, useOverview, type DayTotals } from "./lib/overview";
 
 const NUTRIENTS = [
@@ -33,7 +33,6 @@ export function Trends() {
   const days = dayWindow(o, range).reverse(); // oldest first, left to right
   const counted = days.filter((d) => counts(d, key));
   const avg = counted.length ? counted.reduce((n, d) => n + d[key], 0) / counted.length : null;
-  const focused = days.find((d) => d.date === focus) ?? null;
 
   return (
     <section class="trends" aria-label="Trends">
@@ -53,18 +52,8 @@ export function Trends() {
       </div>
 
       <div class="card">
-        <p class="readout" aria-live="polite">
-          {focused ? (
-            <>
-              <strong>
-                {focused.meals ? `${fmt(focused[key])} ${nutrient.unit}` : "nothing logged"}
-              </strong>{" "}
-              <span class="muted small">
-                {dayName(focused.date)} {short(focused.date)}
-                {focused.meals > 0 && ` · ${focused.analyzed} of ${focused.meals} meal${focused.meals === 1 ? "" : "s"} analyzed`}
-              </span>
-            </>
-          ) : avg !== null ? (
+        <p class="readout">
+          {avg !== null ? (
             <>
               <strong>
                 {fmt(avg)} {nutrient.unit}
@@ -77,8 +66,8 @@ export function Trends() {
             <span class="muted">No fully analyzed days in this range yet.</span>
           )}
         </p>
-        <Chart days={days} k={key} avg={avg} focus={focus} onFocus={setFocus} />
-        <p class="muted small">Tap a day for its total. Paler bars: not every meal that day is analyzed yet, so the total is low.</p>
+        <Chart days={days} k={key} unit={nutrient.unit} avg={avg} focus={focus} onFocus={setFocus} />
+        <p class="muted small">Drag across the chart to read each day. Paler bars: not every meal that day is analyzed yet, so the total is low.</p>
         <details>
           <summary class="small">Show as a table</summary>
           <table class="trend-table">
@@ -131,64 +120,119 @@ export function Trends() {
 }
 
 // One column per day, from a zero baseline, with the average as a hairline. Bars are capped
-// at 24 px and get 4 px rounded tops (the dataviz skill's mark specs); every day's whole
-// column is the tap target, not just its bar.
-function Chart({ days, k, avg, focus, onFocus }: { days: Day[]; k: Key; avg: number | null; focus: string | null; onFocus: (d: string | null) => void }) {
+// at 24 px and get 4 px rounded tops (the dataviz skill's mark specs).
+//
+// Read by dragging, as in Cadence's charts (github.com/mishra69/cadence,
+// frontend/js/charts.js): a pill pinned to the top of the plot tracks the finger's x and
+// stays after it lifts, because that's when the number is read. The drag is taken on a
+// <div>, not the <svg>: WebKit ignores touch-action on SVG elements, so on an iPhone the
+// page would scroll out from under the read. The cost is that the plot itself doesn't
+// scroll the page; everything around it does.
+function Chart({ days, k, unit, avg, focus, onFocus }: { days: Day[]; k: Key; unit: string; avg: number | null; focus: string | null; onFocus: (d: string | null) => void }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const tip = useRef<HTMLDivElement>(null);
   const W = 340;
-  const H = 170;
-  const top = 12;
+  const H = 150;
   const bottom = 22;
-  const plot = H - top - bottom;
+  const plot = H - bottom;
   const max = Math.max(1, ...days.map((d) => d[k]), avg ?? 0) * 1.1;
   const slot = W / days.length;
   const bw = Math.min(24, slot - 2);
-  const y = (v: number) => top + plot - (v / max) * plot;
+  const y = (v: number) => plot - (v / max) * plot;
   const today = localDate();
   const labelEvery = days.length <= 7 ? 1 : 7;
+  const fi = days.findIndex((d) => d.date === focus);
+
+  // The day under a screen x: whole columns are the target, not just the bars.
+  const pick = (clientX: number) => {
+    const svg = wrap.current?.querySelector("svg");
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    const i = Math.floor(((clientX - r.left) / r.width) * days.length);
+    onFocus(days[Math.max(0, Math.min(days.length - 1, i))].date);
+  };
+  const onPointer = (e: PointerEvent) => {
+    e.preventDefault(); // a drag that starts on the plot is a read, never a scroll
+    pick(e.clientX);
+  };
+
+  // Centre the pill on the column, clamped to the plot: at the ends of the range an
+  // x-centred pill would hang off the card, which on a phone is a sideways scrollbar.
+  useLayoutEffect(() => {
+    const t = tip.current;
+    const w = wrap.current;
+    if (!t || !w || fi < 0) return;
+    const cx = ((fi + 0.5) / days.length) * w.clientWidth;
+    t.style.left = `${Math.max(0, Math.min(w.clientWidth - t.offsetWidth, cx - t.offsetWidth / 2))}px`;
+  });
+
+  const d = fi >= 0 ? days[fi] : null;
   return (
-    <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Daily ${k.replace("_g", "")}, last ${days.length} days`} onPointerLeave={() => onFocus(null)}>
-      <line class="grid" x1={0} x2={W} y1={top + plot} y2={top + plot} />
-      {days.map((d, i) => {
-        const x = i * slot + (slot - bw) / 2;
-        const v = d[k];
-        const h = Math.max(0, top + plot - y(v));
-        const r = Math.min(4, bw / 2, h);
-        return (
-          <g key={d.date}>
-            <rect
-              class={"hit" + (focus === d.date ? " on" : "")}
-              x={i * slot}
-              y={0}
-              width={slot}
-              height={H}
-              tabIndex={0}
-              onPointerEnter={() => onFocus(d.date)}
-              onPointerDown={() => onFocus(d.date)}
-              onFocus={() => onFocus(d.date)}
-            />
-            {d.meals > 0 && h > 0 && (
-              <path
-                class={"bar" + (d.complete ? "" : " partial")}
-                pointer-events="none"
-                d={`M${x},${top + plot} V${top + plot - h + r} Q${x},${top + plot - h} ${x + r},${top + plot - h} H${x + bw - r} Q${x + bw},${top + plot - h} ${x + bw},${top + plot - h + r} V${top + plot} Z`}
-              />
-            )}
-            {(i % labelEvery === (days.length - 1) % labelEvery || d.date === today) && (
-              <text x={i * slot + slot / 2} y={H - 6} text-anchor="middle" pointer-events="none">
-                {days.length <= 7 ? dayName(d.date) : short(d.date)}
-              </text>
-            )}
-          </g>
-        );
-      })}
-      {avg !== null && (
-        <>
-          <line class="avg" x1={0} x2={W} y1={y(avg)} y2={y(avg)} pointer-events="none" />
-          <text x={W - 2} y={y(avg) - 4} text-anchor="end" pointer-events="none">
-            avg {fmt(avg)}
-          </text>
-        </>
-      )}
-    </svg>
+    <div
+      ref={wrap}
+      class="chart-plot"
+      tabIndex={0}
+      aria-label={`Daily ${k.replace("_g", "")}, last ${days.length} days. Drag across, or use the arrow keys, to read a day.`}
+      onPointerDown={(e) => {
+        try {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); // keeps the read alive past the edge
+        } catch {
+          /* already gone; the drag still works while over the plot */
+        }
+        onPointer(e);
+      }}
+      onPointerMove={onPointer}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const i = fi < 0 ? days.length - 1 : Math.max(0, Math.min(days.length - 1, fi + (e.key === "ArrowLeft" ? -1 : 1)));
+        onFocus(days[i].date);
+      }}
+    >
+      <div ref={tip} class={"chart-tip" + (d ? " is-on" : "")} aria-live="polite">
+        {d && (
+          <>
+            <strong>{d.meals ? `${fmt(d[k])} ${unit}` : "nothing logged"}</strong>
+            <br />
+            <span class="ro-dim">
+              {dayName(d.date)} {short(d.date)}
+              {d.meals > 0 && ` · ${d.analyzed} of ${d.meals} analyzed`}
+            </span>
+          </>
+        )}
+      </div>
+      <svg class="chart" viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+        {fi >= 0 && <rect class="focus-band" x={fi * slot} y={0} width={slot} height={plot} />}
+        <line class="grid" x1={0} x2={W} y1={plot} y2={plot} />
+        {days.map((d, i) => {
+          const x = i * slot + (slot - bw) / 2;
+          const h = Math.max(0, plot - y(d[k]));
+          const r = Math.min(4, bw / 2, h);
+          return (
+            <g key={d.date}>
+              {d.meals > 0 && h > 0 && (
+                <path
+                  class={"bar" + (d.complete ? "" : " partial")}
+                  d={`M${x},${plot} V${plot - h + r} Q${x},${plot - h} ${x + r},${plot - h} H${x + bw - r} Q${x + bw},${plot - h} ${x + bw},${plot - h + r} V${plot} Z`}
+                />
+              )}
+              {(i % labelEvery === (days.length - 1) % labelEvery || d.date === today) && (
+                <text x={i * slot + slot / 2} y={H - 6} text-anchor="middle">
+                  {days.length <= 7 ? dayName(d.date) : short(d.date)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        {avg !== null && (
+          <>
+            <line class="avg" x1={0} x2={W} y1={y(avg)} y2={y(avg)} />
+            <text x={2} y={y(avg) - 4}>
+              avg {fmt(avg)}
+            </text>
+          </>
+        )}
+      </svg>
+    </div>
   );
 }

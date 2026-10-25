@@ -3,9 +3,10 @@ import { openApp, seedMeal, sql } from "./helpers";
 
 // The API path (D27, D28) against a stub provider (OPENROUTER_STUB): the queue, the import,
 // the model's questions, corrections and the cost record. The real call is checked live.
+// Runs happen on their own: each user's clock (a Durable Object alarm, D31) fires when a
+// run is due, so these tests only wait.
 test.describe.configure({ mode: "serial" });
 
-const cron = (request: APIRequestContext) => request.get("/cdn-cgi/handler/scheduled?cron=*+*+*+*+*");
 const mealOf = async (request: APIRequestContext, id: string) => (await (await request.get(`/api/meals/${id}`)).json()).meal;
 
 // Leave nothing behind for the other specs: these meals are dated today, so they'd show on
@@ -21,7 +22,7 @@ test.afterAll(async ({ request }) => {
   for (const id of created) await request.delete(`/api/meals/${id}`);
 });
 
-test("with automatic analysis on, a new meal is analyzed by the cron run and its cost recorded", async ({ page, request }) => {
+test("with automatic analysis on, a new meal is analyzed by the user's clock and its cost recorded", async ({ page, request }) => {
   await openApp(page, "#/settings");
   const card = page.locator(".auto-analysis");
   await expect(card).toContainText("Off");
@@ -30,12 +31,10 @@ test("with automatic analysis on, a new meal is analyzed by the cron run and its
   await expect(card).toContainText("On · anthropic/claude-opus-5.5");
 
   const id = await seed(request, "2026-10-24T13:00:00-05:00", "api lunch");
-  expect((await mealOf(request, id)).api.job.status).toBe("queued");
-  // Queued meals aren't offered for a chat batch.
+  // Queued (or already running) meals aren't offered for a chat batch.
   const pending = (await (await request.get("/api/batches/pending-meals")).json()).meals.map((m: { id: string }) => m.id);
   expect(pending).not.toContain(id);
 
-  expect((await cron(request)).status()).toBe(200);
   await expect.poll(async () => (await mealOf(request, id)).analyses.length, { timeout: 15_000 }).toBe(1);
   const meal = await mealOf(request, id);
   expect(meal.analyses[0]).toMatchObject({ description: "stub estimate", kcal: 500, fiber_g: 6, model: "anthropic/claude-opus-5.5 (stub)" });
@@ -51,7 +50,6 @@ test("with automatic analysis on, a new meal is analyzed by the cron run and its
 
 test("the model's question is answered on the meal, and the meal is re-estimated with the answer", async ({ page, request }) => {
   const id = await seed(request, "2026-10-24T19:00:00-05:00", "dinner ASK");
-  await cron(request);
   await expect.poll(async () => (await mealOf(request, id)).api.questions.length, { timeout: 15_000 }).toBe(1);
 
   await openApp(page, `#/meal/${id}`);
@@ -59,9 +57,7 @@ test("the model's question is answered on the meal, and the meal is re-estimated
   await expect(qs).toContainText("Was that a full plate or half?");
   await qs.getByPlaceholder("Your answer").fill("half a plate");
   await qs.getByRole("button", { name: "Send answers" }).click();
-  await expect(page.locator(".api-status")).toContainText(/Revising|Analyzing/);
 
-  await cron(request);
   await expect(page.locator(".analysis").first()).toContainText("revised: You asked: Was that a full plate or half? My answer: half a plate", { timeout: 15_000 });
   await expect(page.locator(".analysis")).toHaveCount(2); // the first estimate is kept
   await expect(page.locator(".questions")).toHaveCount(0);
@@ -71,7 +67,6 @@ test("the model's question is answered on the meal, and the meal is re-estimated
 
 test("a correction re-estimates the meal; spoken words are transcribed into the box", async ({ page, request }) => {
   const id = await seed(request, "2026-10-24T08:00:00-05:00", "api breakfast");
-  await cron(request);
   await expect.poll(async () => (await mealOf(request, id)).analyses.length, { timeout: 15_000 }).toBe(1);
 
   await openApp(page, `#/meal/${id}`);
@@ -83,8 +78,6 @@ test("a correction re-estimates the meal; spoken words are transcribed into the 
   await expect(box.locator("textarea")).toHaveValue(/^\(test transcript of \d+ bytes\)$/);
   await box.locator("textarea").fill("it was two eggs, not one");
   await box.getByRole("button", { name: "Send correction" }).click();
-
-  await cron(request);
   await expect(page.locator(".analysis").first()).toContainText("revised: My correction: it was two eggs, not one", { timeout: 15_000 });
 });
 
@@ -104,7 +97,7 @@ test("meals saved while it was off can be analyzed from Settings or picked on An
   await page.locator(".pick-row", { hasText: "waiting A" }).locator("input").check();
   await page.getByRole("button", { name: "Analyze 1 with claude-opus-5.5 instead" }).click();
   await expect(page.locator(".toast")).toContainText("Analyzing 1 meal");
-  expect((await mealOf(request, a)).api.job.status).toBe("queued");
+  expect((await mealOf(request, a)).api.job.status).toMatch(/queued|running|done/);
   expect((await mealOf(request, b)).api.job).toBeNull();
   await expect(page.locator(".pick-row", { hasText: "waiting A" })).toHaveCount(0); // no longer offered for a chat batch
 });

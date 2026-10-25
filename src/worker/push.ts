@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { createPusher } from "webpush-edge";
+import { wake } from "./clock";
 import type { AppEnv } from "./index";
-import { dueReminders, localClock, morningMessage, nightlyMessage, type ReminderUser } from "../shared/reminders";
+import { dueReminders, localClock, morningMessage, nextReminderAt, nightlyMessage, type ReminderUser } from "../shared/reminders";
 
 // Reminders by Web Push (D25), with webpush-edge doing the encryption and signing (the
 // pwa-cloudflare skill's choice; Apple accepts only aes128gcm). Subscriptions live in D1.
@@ -83,6 +84,8 @@ push.post("/push/subscribe", async (c) => {
   )
     .bind(endpoint, user.id, p256dh, auth, isTz(tz) ? tz : null, now)
     .run();
+  // A new zone or a first subscription changes when the next reminder is due.
+  c.executionCtx.waitUntil(wake(c.env, user.id));
   const devices = (await d1Store(c.env.DB).get(user.id)).length;
   return c.json({ ok: true, devices });
 });
@@ -112,35 +115,44 @@ push.post("/push/test", async (c) => {
   return c.json(r);
 });
 
-// From the cron trigger, every 15 minutes: send whatever reminders are due now.
-export async function runReminders(env: PushEnv, now = Date.now()) {
-  const { results } = await env.DB.prepare(
-    `SELECT s.user_id,
-       (SELECT tz FROM push_subscriptions t WHERE t.user_id = s.user_id AND t.tz IS NOT NULL ORDER BY updated_at DESC LIMIT 1) AS tz,
-       (SELECT MAX(taken_ms) FROM meals m WHERE m.user_id = s.user_id AND m.deleted_at IS NULL) AS last_meal_ms,
-       (SELECT MAX(sent_ms) FROM reminders_sent r WHERE r.user_id = s.user_id AND r.kind = 'morning') AS last_morning_ms
-     FROM push_subscriptions s GROUP BY s.user_id`,
-  ).all<{ user_id: string; tz: string | null; last_meal_ms: number | null; last_morning_ms: number | null }>();
+// What a user's reminders depend on, now. Null without a subscription that has a zone:
+// then there's nobody to remind, or no telling when 10:30 pm is.
+async function reminderUser(env: PushEnv, userId: string, now: number): Promise<ReminderUser | null> {
+  const r = await env.DB.prepare(
+    `SELECT
+       (SELECT tz FROM push_subscriptions t WHERE t.user_id = ?1 AND t.tz IS NOT NULL ORDER BY updated_at DESC LIMIT 1) AS tz,
+       (SELECT MAX(taken_ms) FROM meals m WHERE m.user_id = ?1 AND m.deleted_at IS NULL) AS last_meal_ms,
+       (SELECT MAX(sent_ms) FROM reminders_sent r WHERE r.user_id = ?1 AND r.kind = 'morning') AS last_morning_ms`,
+  )
+    .bind(userId)
+    .first<{ tz: string | null; last_meal_ms: number | null; last_morning_ms: number | null }>();
+  if (!r?.tz) return null;
+  const { results: sent } = await env.DB.prepare("SELECT kind FROM reminders_sent WHERE user_id = ?1 AND local_date = ?2")
+    .bind(userId, localClock(r.tz, now).date)
+    .all<{ kind: string }>();
+  return {
+    userId,
+    tz: r.tz,
+    lastMealMs: r.last_meal_ms,
+    lastMorningMs: r.last_morning_ms,
+    sentToday: { nightly: sent.some((s) => s.kind === "nightly"), morning: sent.some((s) => s.kind === "morning") },
+  };
+}
 
-  const users: ReminderUser[] = [];
-  for (const r of results) {
-    if (!r.tz) continue; // no zone yet: can't tell when 10:30 pm is
-    const today = localClock(r.tz, now).date;
-    const { results: sent } = await env.DB.prepare("SELECT kind FROM reminders_sent WHERE user_id = ?1 AND local_date = ?2")
-      .bind(r.user_id, today)
-      .all<{ kind: string }>();
-    users.push({
-      userId: r.user_id,
-      tz: r.tz,
-      lastMealMs: r.last_meal_ms,
-      lastMorningMs: r.last_morning_ms,
-      sentToday: { nightly: sent.some((s) => s.kind === "nightly"), morning: sent.some((s) => s.kind === "morning") },
-    });
-  }
+// When the user's clock should next wake for a reminder (D31).
+export async function nextReminder(env: PushEnv, userId: string, now = Date.now()): Promise<number | null> {
+  const u = await reminderUser(env, userId, now);
+  if (!u) return null;
+  // Due now (e.g. subscribed at 10:45 pm, before tonight's went out): fire straight away.
+  return dueReminders([u], now).length ? now : nextReminderAt(u, now);
+}
 
-  for (const due of dueReminders(users, now)) {
-    const u = users.find((x) => x.userId === due.userId)!;
-    // Claim the slot first, so overlapping runs can't both send.
+// From the user's clock (src/worker/clock.ts): send whatever reminders are due now.
+export async function runReminders(env: PushEnv, userId: string, now = Date.now()) {
+  const u = await reminderUser(env, userId, now);
+  if (!u) return;
+  for (const due of dueReminders([u], now)) {
+    // Claim the slot first, so a retried alarm can't send twice.
     const claimed = await env.DB.prepare(
       "INSERT OR IGNORE INTO reminders_sent (user_id, kind, local_date, sent_ms, result) VALUES (?1, ?2, ?3, ?4, '{}')",
     )

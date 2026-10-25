@@ -31,8 +31,12 @@
     "VAPID_PUBLIC_KEY": "BB1qlQNTJL7VZdgmo5AFvYhzh3PKA4T8B0kh57Jm6qAb7pT1Oj_x885SXPUOgjl8rzk98jhrPiPDY9T7NRDS_MA"
   },
   "observability": { "enabled": true },
-  // Daily purge of meals deleted more than 30 days ago (src/worker/purge.ts). Every minute:
-  // the analysis queue (src/worker/analyze.ts) and reminders (src/worker/push.ts).
+  // Each user's clock (D31): a Durable Object whose alarm runs analyses and reminders
+  // exactly when they're due. Nothing polls.
+  "durable_objects": { "bindings": [{ "name": "CLOCK", "class_name": "UserClock" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserClock"] }],
+  // Once a day: the purge of meals deleted more than 30 days ago (src/worker/purge.ts),
+  // and a safety net that re-plans every user's clock.
   // Secrets: SESSION_SECRET, VAPID_PRIVATE_JWK, OPENROUTER_API_KEY (the API path, D27).
-  "triggers": { "crons": ["17 3 * * *", "* * * * *"] }
+  "triggers": { "crons": ["17 3 * * *"] }
 }

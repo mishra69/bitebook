@@ -5,8 +5,10 @@ import { diag } from "./diag";
 import { meals } from "./meals";
 import { memory } from "./memory";
 import { purgeDeleted } from "./purge";
-import { push, runReminders } from "./push";
-import { analysis, images, runDueJobs } from "./analyze";
+export { UserClock } from "./clock";
+import { push } from "./push";
+import { wakeAll } from "./clock";
+import { analysis, images } from "./analyze";
 import { overview } from "./overview";
 
 export type AppEnv = {
@@ -53,9 +55,9 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
-  async scheduled(event, env, ctx) {
-    if (event.cron === "17 3 * * *") return ctx.waitUntil(purgeDeleted(env));
-    ctx.waitUntil(runDueJobs(env, env.APP_ORIGIN));
-    ctx.waitUntil(runReminders(env, event.scheduledTime));
+  async scheduled(_event, env, ctx) {
+    // The only cron (D31): the daily purge, and a re-plan of every user's clock.
+    ctx.waitUntil(purgeDeleted(env));
+    ctx.waitUntil(wakeAll(env));
   },
 } satisfies ExportedHandler<Env>;

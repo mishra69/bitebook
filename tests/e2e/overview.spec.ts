@@ -1,11 +1,10 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { openApp, seedMeal } from "./helpers";
 
 // Today's running total, the questions card, the chat-waiting card, and Trends (D30).
 test.describe.configure({ mode: "serial" });
 
 const created: string[] = [];
-const cron = (request: APIRequestContext) => request.get("/cdn-cgi/handler/scheduled?cron=*+*+*+*+*");
 // A time earlier today, on the phone's clock and in its zone.
 const todayAt = (page: Page, hour: number) =>
   page.evaluate((h) => {
@@ -37,8 +36,10 @@ test("with automatic analysis, Today shows the running total and the model's que
   await request.post("/api/analysis/queue-pending"); // the chat-waiting meal above
   await openApp(page);
   created.push(await seedMeal(request, await todayAt(page, 0), "lunch ASK"));
-  await cron(request);
-  await cron(request);
+  // The user's clock runs both analyses within seconds (D31).
+  await expect
+    .poll(async () => (await (await request.get("/api/overview?days=1")).json()).questions.length, { timeout: 20_000 })
+    .toBeGreaterThan(0);
 
   await page.reload();
   await expect(page.locator(".chat-waiting")).toHaveCount(0); // nothing for the chat to do
@@ -59,9 +60,22 @@ test("Trends charts a nutrient per day, shows the latest comment, and links to t
   await page.getByRole("radio", { name: "protein" }).click();
   await expect(page.locator(".readout")).toContainText(/ g a day on average/);
   await page.getByRole("radio", { name: "30 days" }).click();
-  await expect(page.locator(".chart .hit")).toHaveCount(30);
-  await page.locator(".chart .hit").last().dispatchEvent("pointerdown");
-  await expect(page.locator(".readout")).toContainText(/of \d+ meals? analyzed/);
+  // Read by dragging: the pill names the day under the finger, stays inside the card at
+  // the right edge, and stays up after the finger lifts.
+  const plot = page.locator(".chart-plot");
+  const box = (await plot.boundingBox())!;
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height - 30);
+  await page.mouse.down();
+  const tip = page.locator(".chart-tip.is-on");
+  await expect(tip).toContainText(/\d+ of \d+ analyzed/); // the right edge is today, which has meals
+  await page.mouse.move(box.x + 4, box.y + box.height - 30, { steps: 5 });
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height - 30, { steps: 5 });
+  await page.mouse.up();
+  await expect(tip).toBeVisible();
+  const t = (await tip.boundingBox())!;
+  expect(t.x + t.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+  expect(t.y).toBeGreaterThanOrEqual(box.y - 0.5);
+  await expect(plot).toHaveCSS("touch-action", "none");
   await page.locator("details summary").click();
   await expect(page.locator(".trend-table tbody tr")).toHaveCount(30);
   await expect(page.locator(".summary")).toContainText("Stub summary.");

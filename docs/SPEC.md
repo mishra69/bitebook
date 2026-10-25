@@ -51,7 +51,7 @@ model analyses and the user's corrections.
 
 ## 2. Architecture
 
-> **Tier:** Core · **Verified:** 2026-10-24
+> **Tier:** Core · **Verified:** 2026-10-25
 
 ```
 iPhone (PWA, home-screen app)
@@ -59,6 +59,7 @@ iPhone (PWA, home-screen app)
   └─ HTTPS ──> Cloudflare Worker (serves static PWA + JSON API)
                  ├─ D1: meals, photos, batches, analyses, questions, jobs
                  ├─ R2: originals/, display/ images and voice/ notes
+                 ├─ Durable Objects: one clock per user (analysis runs, reminders)
                  ├─ Workers AI: Whisper, for voice notes
                  └─ OpenRouter (any vision model), for the API path
 Laptop
@@ -307,7 +308,7 @@ Still to check, then delete this section:
   this" (typed and spoken) feel natural? What does Memory say it costs per day?
 
 - **Reminders:** turn them on from the card on Today (home-screen app only), then
-  Memory → Reminders → "Send a test". Does it arrive, and does tapping it open
+  ⚙︎ Settings → Reminders → "Send a test". Does it arrive, and does tapping it open
   Timeline? Does the 10:30 pm one arrive on time?
 - **A missed meal:** Timeline → "Add a meal I missed", record a note, save. Does the
   reply estimate it sensibly from the words alone?
@@ -356,9 +357,10 @@ Run it yearly, or whenever R2 approaches ~8 GB. The app shows the R2 usage on a 
 
 ## 9a. API path
 
-> **Tier:** Plan · **Verified:** 2026-10-24 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-25 · **Expires:** 2027-01-17
 
-Built: `src/worker/analyze.ts` (queue, OpenRouter call, signed photo links, routes),
+Built: `src/worker/analyze.ts` (queue, OpenRouter call, signed photo links, routes), run by
+each user's clock (`src/worker/clock.ts`, a Durable Object alarm, D31),
 `src/app/ApiPanel.tsx` and `src/app/AutoAnalysis.tsx`. Why it's shaped this way: D27
 and D28. The trial (from 2026-10-24, a week or two) answers three questions: is it as
 good as the chat, what does it cost per person per day (Settings shows it), and is it
@@ -381,7 +383,8 @@ in Settings, daily targets for the running total.
 *Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19),
 voice notes (D21), fiber (D22), missed meals without a photo (D24), reminders (D25), the
 API path with questions and corrections (D27, D28), which moved ahead of the rest on
-2026-10-24, and the running total, Trends and question notifications (D30).
+2026-10-24, and the running total, Trends and question notifications (D30), and per-user clocks in place
+of polling (D31).
 The remaining on-device checks for capture are in §7.*
 
 7. **Apple Health sync** (added 2026-10-23, not designed yet). After an analysis, write each

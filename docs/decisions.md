@@ -463,3 +463,33 @@ here).
 
 The analysis itself runs between the Worker and OpenRouter, so the app can be closed once
 the meal has uploaded; only the upload needs the app open (iOS pauses it otherwise).
+
+## D31 · 2026-10-25 · No polling: each user's clock is a Durable Object alarm
+
+Supersedes the cron parts of D25 (reminders every 15 minutes) and D28 (the analysis queue
+every minute). The every-minute cron made about 5,500 of the day's 6,600 D1 queries, nearly
+all finding nothing to do. Harmless on cost, wasteful in principle, and it buried the logs.
+
+Following Cadence (github.com/mishra69/cadence, `worker/do/daily-push.js`):
+- **One Durable Object per user** (`UserClock`, `src/worker/clock.ts`), holding one alarm set
+  for the next thing that user needs: an analysis run that's due, or a reminder (10:30 pm,
+  or 8 am after more than a day without a meal). Alarms fire at the exact minute.
+- **It keeps no plan of its own.** Each time it fires it does what's due, then works out the
+  next wake-up from D1 again (`nextJob`, `nextReminder`), so it can't drift from the data.
+  Whether a reminder is still wanted is decided when it fires, against current data (as in
+  Cadence: an armed alarm is a prediction).
+- **Woken by events:** every queued run (saving a meal, an answer, a correction, a retry),
+  and every push subscription, which the app re-sends on each open, so a change of zone
+  re-plans the next reminder.
+- **One cron remains, daily:** the purge, plus a re-plan of every user's clock as a safety
+  net for an alarm lost to a bad deploy. Cadence keeps a 30-minute safety net because it
+  also plans each day at its 4 am rollover; Bitebook has nothing to plan ahead.
+
+Free plan: Durable Objects are unlimited in number (up to 100 classes per account), with
+100,000 requests a day (alarms count) and 13,000 GB-seconds a day. A few alarms a day per
+person uses a sliver of that.
+
+The Trends chart also takes Cadence's reading pattern: drag across it and a pill pinned to
+the top tracks the finger and stays after it lifts. The drag is taken on a `<div>` with
+`touch-action: none`, because WebKit ignores `touch-action` on SVG and the page would
+otherwise scroll mid-read.

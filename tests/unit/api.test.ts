@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildPrompt } from "../../src/shared/prompt";
 import { REPLY_JSON_SCHEMA, validateReply } from "../../src/shared/reply";
-import { checkImageLink, imageLink } from "../../src/worker/analyze";
+import { checkImageLink, imageLink } from "../../src/worker/imagelink";
 
 const base = {
   batchId: "01B", notes: [], foods: [], digest: [], asked: [], trend: { days: 0, kcal: null, protein_g: null, fiber_g: null },

@@ -6,12 +6,15 @@ import { batchKey, photoFileName } from "../shared/prompt";
 import { REPLY_JSON_SCHEMA } from "../shared/reply";
 import { isUlid, ulid } from "../shared/ulid";
 import { whisper } from "./transcribe";
+import { checkImageLink, imageLink } from "./imagelink";
 import { send as sendPush } from "./push";
+import { wake } from "./clock";
 import type { ApiState, Meal } from "../shared/meals";
 
 // The API path (D27, D28): each new meal is analyzed automatically through OpenRouter,
-// with the same batch, prompt (its API variant) and validator as the chat handoff. The
-// cron trigger runs the queue every minute; nothing waits on the phone.
+// with the same batch, prompt (its API variant) and validator as the chat handoff. Each
+// user's Durable Object alarm runs their queue when a run is due (D31); nothing waits on
+// the phone.
 // Only what any vision model offers is used (text and images in, JSON out, a cost per
 // call), so switching models is a setting, not a code change.
 
@@ -21,38 +24,9 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_ATTEMPTS = 3;
 const JOBS_PER_RUN = 3; // per cron invocation; each run is one model call
 const STALE_RUNNING_MS = 10 * 60_000; // a run this old was cut off: try again
-const IMAGE_LINK_MS = 30 * 60_000;
 
 // Suggested in the app; any OpenRouter id with image input works.
 export const SUGGESTED_MODELS = ["anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5.5", "anthropic/claude-haiku-5.5"];
-
-// ── Photo links the provider can fetch ──────────────────────────────────────
-// The photos are private, so each run hands out short-lived signed links instead of
-// uploading the images inline (which would cost CPU time and request size).
-
-async function imageKey(env: ApiEnv) {
-  const secret = env.SESSION_SECRET ?? (env.AUTH_DISABLED === "1" ? "local-dev-only" : null);
-  if (!secret) throw new Error("SESSION_SECRET is not set");
-  return crypto.subtle.importKey("raw", new TextEncoder().encode("bitebook-image-link:" + secret), { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-    "verify",
-  ]);
-}
-const b64url = (b: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-export async function imageLink(env: ApiEnv, origin: string, photoId: string, now = Date.now()) {
-  const exp = now + IMAGE_LINK_MS;
-  const sig = b64url(await crypto.subtle.sign("HMAC", await imageKey(env), new TextEncoder().encode(`${photoId}.${exp}`)));
-  return `${origin}/img/${photoId}/${exp}/${sig}.jpg`;
-}
-
-export async function checkImageLink(env: ApiEnv, photo: string, expParam: string, sigParam: string, now = Date.now()) {
-  const exp = Number(expParam);
-  const sig = sigParam.replace(/\.jpg$/, "");
-  if (!isUlid(photo) || !Number.isFinite(exp) || exp < now || !/^[\w-]+$/.test(sig)) return false;
-  const raw = Uint8Array.from(atob(sig.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (sig.length % 4)) % 4)), (ch) => ch.charCodeAt(0));
-  return crypto.subtle.verify("HMAC", await imageKey(env), raw, new TextEncoder().encode(`${photo}.${exp}`)).catch(() => false);
-}
 
 // GET /img/:photo/:exp/:sig.jpg — a display copy, for the model provider. No session: the
 // signature is the permission, and it expires.
@@ -146,27 +120,43 @@ function stubReply(f: StubFacts): string {
 
 type Job = { id: string; user_id: string; meal_id: string; kind: "analyze" | "revise"; input: string | null; model: string; attempts: number };
 
-export async function enqueue(db: D1Database, userId: string, mealId: string, model: string, kind: Job["kind"], input: string | null, delayMs = 0) {
+// Queues a run and wakes the user's clock for it (D31): nothing polls the queue.
+export async function enqueue(env: ApiEnv, userId: string, mealId: string, model: string, kind: Job["kind"], input: string | null, delayMs = 0) {
   const now = Date.now();
-  await db
+  await env.DB
     .prepare(
       `INSERT INTO analysis_jobs (id, user_id, meal_id, kind, input, model, run_after_ms, created_at, updated_at)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)`,
     )
     .bind(ulid(), userId, mealId, kind, input, model, now + delayMs, new Date(now).toISOString())
     .run();
+  await wake(env, userId);
 }
 
-// From the cron trigger. Claims a few due jobs (a conditional update, so overlapping runs
-// can't take the same one) and runs them one after another.
-export async function runDueJobs(env: ApiEnv, origin: string, now = Date.now()) {
-  await env.DB.prepare("UPDATE analysis_jobs SET status = 'queued', updated_at = ?2 WHERE status = 'running' AND updated_at < ?1")
-    .bind(new Date(now - STALE_RUNNING_MS).toISOString(), new Date(now).toISOString())
+// When the user's clock should next wake for the queue: the earliest queued run, or a
+// running one that's gone quiet (its Worker was cut off) and should be taken back.
+export async function nextJob(env: ApiEnv, userId: string): Promise<number | null> {
+  const r = await env.DB.prepare(
+    `SELECT MIN(t) AS t FROM (
+       SELECT run_after_ms AS t FROM analysis_jobs WHERE user_id = ?1 AND status = 'queued'
+       UNION ALL
+       SELECT CAST(strftime('%s', updated_at) AS INTEGER) * 1000 + ?2 FROM analysis_jobs WHERE user_id = ?1 AND status = 'running')`,
+  )
+    .bind(userId, STALE_RUNNING_MS)
+    .first<{ t: number | null }>();
+  return r?.t ?? null;
+}
+
+// From the user's clock (src/worker/clock.ts). Claims a few due runs (a conditional
+// update, so a retried alarm can't take the same one twice) and runs them in turn.
+export async function runDueJobs(env: ApiEnv, origin: string, userId: string, now = Date.now()) {
+  await env.DB.prepare("UPDATE analysis_jobs SET status = 'queued', updated_at = ?3 WHERE user_id = ?1 AND status = 'running' AND updated_at < ?2")
+    .bind(userId, new Date(now - STALE_RUNNING_MS).toISOString(), new Date(now).toISOString())
     .run();
   const { results } = await env.DB.prepare(
-    "SELECT id, user_id, meal_id, kind, input, model, attempts FROM analysis_jobs WHERE status = 'queued' AND run_after_ms <= ?1 ORDER BY run_after_ms LIMIT ?2",
+    "SELECT id, user_id, meal_id, kind, input, model, attempts FROM analysis_jobs WHERE user_id = ?1 AND status = 'queued' AND run_after_ms <= ?2 ORDER BY run_after_ms LIMIT ?3",
   )
-    .bind(now, JOBS_PER_RUN)
+    .bind(userId, now, JOBS_PER_RUN)
     .all<Job>();
   for (const job of results) {
     const claimed = await env.DB.prepare(
@@ -297,7 +287,7 @@ analysis.post("/analysis/queue-pending", async (c) => {
   )
     .bind(user.id, picked ? JSON.stringify(picked) : null)
     .all<{ id: string }>();
-  for (const m of results) await enqueue(c.env.DB, user.id, m.id, model, "analyze", null);
+  for (const m of results) await enqueue(c.env, user.id, m.id, model, "analyze", null);
   return c.json({ ok: true, queued: results.length });
 });
 
@@ -327,7 +317,7 @@ analysis.post("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}/answers", async (c) => {
     lines.push(`You asked: ${q.question}\nMy answer: ${a.answer.trim()}`);
   }
   if (lines.length === 0) return c.json({ error: "not_found" }, 404);
-  await enqueue(c.env.DB, user.id, mealId, model, "revise", lines.join("\n"));
+  await enqueue(c.env, user.id, mealId, model, "revise", lines.join("\n"));
   return c.json({ ok: true });
 });
 
@@ -341,7 +331,7 @@ analysis.post("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}/correct", async (c) => {
   if (!text || text.length > 2000) return c.json({ error: "bad_request" }, 400);
   const meal = await c.env.DB.prepare("SELECT 1 FROM meals WHERE id = ?1 AND user_id = ?2 AND deleted_at IS NULL").bind(c.req.param("id"), user.id).first();
   if (!meal) return c.json({ error: "not_found" }, 404);
-  await enqueue(c.env.DB, user.id, c.req.param("id"), model, "revise", `My correction: ${text}`);
+  await enqueue(c.env, user.id, c.req.param("id"), model, "revise", `My correction: ${text}`);
   return c.json({ ok: true });
 });
 
@@ -356,7 +346,7 @@ analysis.post("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}/retry", async (c) => {
     .bind(user.id, c.req.param("id"))
     .first<{ kind: Job["kind"]; input: string | null; status: string }>();
   if (!last || last.status !== "failed") return c.json({ error: "nothing_to_retry" }, 409);
-  await enqueue(c.env.DB, user.id, c.req.param("id"), model, last.kind, last.input);
+  await enqueue(c.env, user.id, c.req.param("id"), model, last.kind, last.input);
   return c.json({ ok: true });
 });
 

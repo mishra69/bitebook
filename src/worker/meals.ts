@@ -125,7 +125,7 @@ meals.post("/meals", async (c) => {
   if (meal.voice) c.executionCtx.waitUntil(transcribe(c.env, user.id, meal.id));
   // With automatic analysis on, queue it, after the transcript has had time to arrive (D28).
   const auto = await c.env.DB.prepare("SELECT api_model FROM users WHERE id = ?1").bind(user.id).first<{ api_model: string | null }>();
-  if (auto?.api_model) await enqueue(c.env.DB, user.id, meal.id, auto.api_model, "analyze", null, meal.voice ? 30_000 : 0);
+  if (auto?.api_model) await enqueue(c.env, user.id, meal.id, auto.api_model, "analyze", null, meal.voice ? 30_000 : 0);
   return c.json({ ok: true }, 201);
 });
 

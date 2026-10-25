@@ -208,16 +208,40 @@ ul { margin: 0; padding-left: 1.2rem; }
 .chat-waiting { display: block; color: var(--fg); text-decoration: none; margin: 0.5rem 0; }
 .card + .card, .card.day-total, .card.waiting-questions { margin-bottom: 0.6rem; }
 .trends .chips { margin: 0.4rem 0; }
-.chart { display: block; width: 100%; height: auto; touch-action: pan-y; }
+/* The chart is read by dragging (after Cadence's charts). touch-action has to be on this
+   <div>: WebKit ignores it on <svg>, so on an iPhone the page would scroll mid-read. The
+   padding is headroom for the two-line pill, derived from its type metrics. */
+:root { --tip-font: 12.5px; --tip-line: 1.3; --tip-pad-y: 4px; }
+.chart-plot {
+  position: relative;
+  touch-action: none;
+  padding-top: calc(2 * var(--tip-font) * var(--tip-line) + 2 * var(--tip-pad-y) + 2px + 6px);
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chart-plot:focus-visible { box-shadow: 0 0 0 2px var(--muted); border-radius: 6px; }
+/* Pinned to the top, tracking x only: following the bar's height would put it on top of
+   the bar being read and make it jump from day to day. */
+.chart-tip {
+  position: absolute; top: 0; left: 0;
+  padding: var(--tip-pad-y) 9px; border-radius: 9px;
+  background: var(--bg); border: 1px solid var(--grid);
+  font-size: var(--tip-font); line-height: var(--tip-line);
+  white-space: nowrap; color: var(--fg); font-variant-numeric: tabular-nums;
+  pointer-events: none; /* never eats the drag that moves it */
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.chart-tip.is-on { opacity: 1; }
+.chart-tip .ro-dim { color: var(--muted); }
+.chart { display: block; width: 100%; height: auto; pointer-events: none; }
 .chart .bar { fill: var(--series-1); }
 .chart .bar.partial { fill-opacity: 0.35; }
 .chart .grid { stroke: var(--grid); stroke-width: 1; }
 .chart .avg { stroke: var(--muted); stroke-width: 1; }
 .chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
-.chart .hit { fill: transparent; }
-.chart .hit:focus { outline: none; }
-.chart .hit.on { fill: var(--fg); fill-opacity: 0.06; }
-.readout { min-height: 2.6em; margin: 0.25rem 0; }
+.chart .focus-band { fill: var(--fg); fill-opacity: 0.06; }
+.readout { margin: 0.25rem 0 0.5rem; }
 .readout strong { font-size: 1.15rem; }
 .trend-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .trend-table td, .trend-table th { padding: 0.25rem 0.3rem; text-align: right; border-bottom: 1px solid var(--grid); }

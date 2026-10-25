@@ -28,7 +28,7 @@ test("a device registers for reminders with its zone, and a test reminder reache
   expect(sql("SELECT COUNT(*) AS n FROM push_subscriptions WHERE endpoint = 'https://push.example.test/device-1'")).toEqual([{ n: 0 }]);
 });
 
-test("the cron run sends a nightly reminder once, to a user whose evening it is", async ({ request }) => {
+test("the user's clock sends a nightly reminder once, to a user whose evening it is", async ({ request }) => {
   // A zone where it's between 10:30 pm and midnight right now, if there is one.
   const now = new Date();
   const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
@@ -42,7 +42,11 @@ test("the cron run sends a nightly reminder once, to a user whose evening it is"
 
   sql("DELETE FROM reminders_sent");
   await request.post("/api/push/subscribe", { data: { subscription: subscription(2) }, headers: { "X-Timezone": tz! } });
-  for (let i = 0; i < 2; i++) expect((await request.get("/cdn-cgi/handler/scheduled?cron=*/15+*+*+*+*")).status()).toBe(200);
+  // Subscribing wakes the user's clock, which finds 10:30 pm has come and sends (D31). The
+  // daily cron's re-plan, run twice, must not send it again.
+  await expect.poll(() => sql("SELECT COUNT(*) AS n FROM reminders_sent WHERE result != '{}'")[0].n, { timeout: 20_000 }).toBe(1);
+  for (let i = 0; i < 2; i++) expect((await request.get("/cdn-cgi/handler/scheduled?cron=17+3+*+*+*")).status()).toBe(200);
+  await new Promise((r) => setTimeout(r, 2000));
   const sent = sql("SELECT kind, result FROM reminders_sent");
   expect(sent).toHaveLength(1);
   expect(sent[0].kind).toBe("nightly");
