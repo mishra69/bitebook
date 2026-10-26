@@ -203,6 +203,9 @@ test("a missed meal is added from Timeline with a voice note and no photo, and g
   await expect(page.locator(".voice.saved")).toBeVisible();
   await page.reload(); // kept on the phone like any draft
   await expect(page.getByRole("radio", { name: "Yesterday" })).toHaveAttribute("aria-checked", "true");
+  // Typed right after tapping "lunch": both survive (each edit builds on the newest draft).
+  await expect(page.getByRole("radio", { name: "lunch" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".draft .note")).toHaveValue("missed lunch");
   await save.click();
 
   const meal = await serverMeal(request, "missed lunch");

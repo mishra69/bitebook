@@ -107,6 +107,7 @@ test("remembered foods and notes carry into the next batch's prompt, and can be 
   await openApp(page, "#/memory");
   await expect(page.locator(".memory .meal", { hasText: code })).toContainText("usual lassi shake");
   await expect(page.locator(".memory .meal", { hasText: code })).toContainText("fiber 6 g");
+  await expect(page.locator(".memory .meal", { hasText: code }).locator(".food-usage")).toContainText("not used yet · added");
   await page.getByPlaceholder("Add a note…").fill("My lassi shake: 1 cup 2% yogurt, 1 banana, 1 scoop whey.");
   await page.getByRole("button", { name: "Add note" }).click();
   await expect
@@ -120,12 +121,22 @@ test("remembered foods and notes carry into the next batch's prompt, and can be 
   expect(prompt).toContain("tomato-cream curry with chicken or paneer cubes, no rice · ~400 kcal"); // digest of meal A
   expect(prompt).toContain("suggest I add it to my notes in Bitebook");
 
+  // A reply that uses the food counts toward its "last used" (the cleanup assessment's data).
+  const cBatch = (await (await request.get("/api/batches?status=open")).json()).batches[0].id;
+  const usedReply = replyFor(cBatch, (r) => {
+    r.meals = [{ ...r.meals[0], key: "A", foods_used: [code] }];
+  });
+  expect((await request.post(`/api/batches/${cBatch}/import`, { data: { reply: JSON.stringify(usedReply), model: "test model" } })).status()).toBe(200);
+  await page.reload();
+  await expect(page.locator(".memory .meal", { hasText: code }).locator(".food-usage")).toContainText(/used in 1 meal · last \w+ \d+/);
+
   await page.locator(".memory .meal", { hasText: code }).getByRole("button", { name: "Retire" }).click();
   const activeRow = page.locator(".memory .meal", { hasText: "usual lassi shake", has: page.getByRole("button", { name: "Retire" }) });
   await expect(activeRow).toHaveCount(0);
   await expect(page.locator("details")).toContainText("Retired");
   for (const bt of (await (await request.get("/api/batches?status=open")).json()).batches) await request.post(`/api/batches/${bt.id}/abandon`);
-  prompt = (await (await request.post("/api/batches", { data: { meal_ids: [c] } })).json()).batch.prompt;
+  const d = await seedMeal(request, "2026-10-18T13:00:00-05:00", "memory D");
+  prompt = (await (await request.post("/api/batches", { data: { meal_ids: [d] } })).json()).batch.prompt;
   expect(prompt).not.toContain("usual lassi shake ·");
 });
 

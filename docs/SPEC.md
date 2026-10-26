@@ -378,7 +378,7 @@ in Settings, daily targets for the running total.
 
 ## 11. Build order
 
-> **Tier:** Plan · **Verified:** 2026-10-25 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-26 · **Expires:** 2027-01-17
 
 *Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19),
 voice notes (D21), fiber (D22), missed meals without a photo (D24), reminders (D25), the
@@ -413,6 +413,14 @@ about 2,600 input tokens per photo):
   cache automatically for free; Claude needs a cache mark, costs 25% more to write and
   keeps it 5 minutes. That pays only if quick answers are common: check how often
   questions come and how fast they're answered during the trial.
+- **Cleaning up remembered foods** (added 2026-10-26). Expected: a few foods cover most meals,
+  and most are rarely repeated, so the list (one prompt line each) keeps growing. Memory
+  shows each food's uses and last use (derived from each meal's newest estimate). After a
+  month or two of use, look at the spread and decide whether stale foods should retire
+  automatically, e.g. unused for 30 days, restorable. Until then the user isn't retiring
+  anything by hand, so the data stays unbiased. First check that models cite codes
+  reliably: by 2026-10-26 only 3 of 7 foods had ever been cited, so an automatic rule
+  would retire foods that are still eaten.
 - **Smaller photos for the model.** At about 1,000 px instead of 1,600, image tokens drop
   by about 60%. Test on a few meals before switching, since portions may suffer.
 

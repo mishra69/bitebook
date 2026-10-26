@@ -27,8 +27,16 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
   const [draft, setDraftState] = useState<OutboxMeal | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const draftRef = useRef<OutboxMeal | null>(null);
-  draftRef.current = draft;
+  // The newest draft, including an edit still being written to the phone. Every edit
+  // starts from it, not from what's on screen: two quick edits (tapping "lunch", then
+  // typing a note) would otherwise both start from the same old draft, and the second
+  // would undo the first.
+  const latest = useRef<OutboxMeal | null>(null);
+  const writes = useRef<Promise<void>>(Promise.resolve());
+  const show = (d: OutboxMeal | null) => {
+    latest.current = d;
+    setDraftState(d);
+  };
 
   // On open and on every return to the app: restore the draft, or save it if it was left
   // open (the meal's time comes from its photos, so saving late changes nothing).
@@ -36,10 +44,10 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
     const check = async () => {
       const d = await getDraft(userId);
       if (!d) return;
-      if (!isStaleDraft(d)) return setDraftState(d);
+      if (!isStaleDraft(d)) return show(d);
       await putMeal({ ...d, note: d.note?.trim() || null, draft: false, savedAt: Date.now() });
       diag("saved", { meal: d.id, photos: d.photos.length, auto: true });
-      setDraftState(null);
+      show(null);
       const n = d.photos.length;
       showToast({ text: `Saved your ${timeOfDay(d.takenAt)} meal (${n} photo${n === 1 ? "" : "s"}) that was left open.` }, 10_000);
       sync();
@@ -51,19 +59,26 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
   }, [userId]);
 
   // Store first, then show: a photo on screen is a photo already safe on the phone.
-  const setDraft = async (d: OutboxMeal | null) => {
+  // Writes go one at a time, in order, so an older draft can never land after a newer one.
+  const setDraft = (d: OutboxMeal) => {
     clearTimeout(noteTimer.current);
-    if (d) await putMeal(d);
-    setDraftState(d);
+    latest.current = d;
+    const done = writes.current.then(() => putMeal(d)).then(() => {
+      if (latest.current === d) setDraftState(d);
+    });
+    writes.current = done.catch(() => {});
+    return done;
   };
+  // An edit to the newest draft.
+  const edit = (fn: (d: OutboxMeal) => OutboxMeal) => (latest.current ? setDraft(fn(latest.current)) : Promise.resolve());
 
-  // Notes are persisted after a pause in typing, not on every keystroke.
+  // Notes are shown as typed and stored after a pause in typing, not on every keystroke.
   const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const setNote = (d: OutboxMeal, note: string) => {
-    const next = { ...d, note };
-    setDraftState(next);
+  const setNote = (note: string) => {
+    if (!latest.current) return;
+    show({ ...latest.current, note });
     clearTimeout(noteTimer.current);
-    noteTimer.current = setTimeout(() => putMeal(next), 400);
+    noteTimer.current = setTimeout(() => latest.current && setDraft(latest.current), 400);
   };
 
   // Opened as #/missed (from Timeline): start a meal without a photo, unless one is
@@ -89,8 +104,8 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
   }, [missed, userId]);
 
   // A missed meal's time follows its day and meal type.
-  const setMissed = (d: OutboxMeal, daysAgo: number, mealType: MealType | null) =>
-    setDraft({ ...d, mealType, missed: { daysAgo }, takenAt: missedMealTime(daysAgo, mealType) });
+  const setMissed = (daysAgo: number, mealType: MealType | null) =>
+    edit((d) => ({ ...d, mealType, missed: { daysAgo }, takenAt: missedMealTime(daysAgo, mealType) }));
 
   const urls = useMemo(() => draft?.photos.map((p) => URL.createObjectURL(p.display)) ?? [], [draft?.photos]);
   useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
@@ -105,7 +120,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
     if (!files?.length) return;
     setBusy("Processing photo…");
     try {
-      let d = draft;
+      let d = latest.current;
       for (const f of Array.from(files)) {
         const p = await preparePhoto(f, new Date());
         const photo = {
@@ -136,7 +151,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
               draft: true,
             };
       }
-      await setDraft(d);
+      if (d) await setDraft(d);
     } catch (e) {
       setError((e as Error).message === "unsupported_image" ? "This photo's format can't be read on this device." : "Couldn't process or store that photo. Is storage full?");
     } finally {
@@ -149,13 +164,15 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
   const missedIncomplete = !!draft && draft.photos.length === 0 && (!draft.mealType || (!draft.voice && !draft.note?.trim()));
 
   const save = async () => {
-    if (!draft || missedIncomplete) return;
+    if (!latest.current || missedIncomplete) return;
     clearTimeout(noteTimer.current);
     setBusy("Saving…");
     try {
-      await putMeal({ ...draft, note: draft.note?.trim() || null, draft: false, savedAt: Date.now() });
-      diag("saved", { meal: draft.id, photos: draft.photos.length, voice: !!draft.voice });
-      setDraftState(null);
+      await writes.current; // a draft write landing after this would turn the meal back into a draft
+      const d = latest.current;
+      await putMeal({ ...d, note: d.note?.trim() || null, draft: false, savedAt: Date.now() });
+      diag("saved", { meal: d.id, photos: d.photos.length, voice: !!d.voice });
+      show(null);
       // Ask iOS not to evict the outbox under storage pressure. Best effort.
       navigator.storage?.persist?.().catch(() => {});
       sync();
@@ -167,18 +184,24 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
   };
 
   const discard = async () => {
-    if (draft && (draft.photos.length > 0 || draft.voice) && !confirm("Discard this meal?")) return;
-    if (draft) await deleteMeal(draft.id);
-    setDraftState(null);
+    const d = latest.current;
+    if (d && (d.photos.length > 0 || d.voice) && !confirm("Discard this meal?")) return;
+    clearTimeout(noteTimer.current);
+    await writes.current;
+    if (d) await deleteMeal(d.id);
+    show(null);
   };
 
   const removePhoto = async (id: string) => {
-    if (!draft) return;
-    const photos = draft.photos.filter((p) => p.id !== id).map((p, position) => ({ ...p, position }));
-    if (photos.length || draft.missed) await setDraft({ ...draft, photos });
+    const d = latest.current;
+    if (!d) return;
+    const photos = d.photos.filter((p) => p.id !== id).map((p, position) => ({ ...p, position }));
+    if (photos.length || d.missed) await setDraft({ ...d, photos });
     else {
-      await deleteMeal(draft.id);
-      setDraftState(null);
+      clearTimeout(noteTimer.current);
+      await writes.current;
+      await deleteMeal(d.id);
+      show(null);
     }
   };
 
@@ -206,7 +229,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
                     role="radio"
                     aria-checked={draft.missed!.daysAgo === daysAgo}
                     class={"chip" + (draft.missed!.daysAgo === daysAgo ? " on" : "")}
-                    onClick={() => setMissed(draft, daysAgo, draft.mealType)}
+                    onClick={() => setMissed(daysAgo, latest.current?.mealType ?? null)}
                   >
                     {label}
                   </button>
@@ -231,9 +254,10 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
                 aria-checked={draft.mealType === t}
                 class={"chip" + (draft.mealType === t ? " on" : "")}
                 onClick={() => {
-                  const mealType = draft.mealType === t ? null : t;
-                  if (draft.missed && draft.photos.length === 0) setMissed(draft, draft.missed.daysAgo, mealType);
-                  else setDraft({ ...draft, mealType });
+                  const d = latest.current!;
+                  const mealType = d.mealType === t ? null : t;
+                  if (d.missed && d.photos.length === 0) setMissed(d.missed.daysAgo, mealType);
+                  else edit((x) => ({ ...x, mealType }));
                 }}
               >
                 {t}
@@ -246,17 +270,15 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
             maxLength={2000}
             placeholder="Note (optional): half eaten, no oil, shared…"
             value={draft.note ?? ""}
-            onInput={(e) => setNote(draft, (e.target as HTMLTextAreaElement).value)}
+            onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
           />
           <VoiceNote
             draft={draft}
             onRecorded={async (r) => {
-              const d = draftRef.current;
-              if (!d) return;
               const sha256 = await sha256Hex(await r.blob.arrayBuffer());
-              await setDraft({ ...d, voice: { blob: r.blob, mime: r.mime, sha256, durationMs: r.durationMs, uploaded: false } });
+              await edit((d) => ({ ...d, voice: { blob: r.blob, mime: r.mime, sha256, durationMs: r.durationMs, uploaded: false } }));
             }}
-            onRemove={() => draftRef.current && setDraft({ ...draftRef.current, voice: undefined })}
+            onRemove={() => edit((d) => ({ ...d, voice: undefined }))}
             onError={setError}
             onRecordingChange={(on) => setBusy(on ? "Recording…" : null)}
           />

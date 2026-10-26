@@ -13,7 +13,16 @@ type Food = {
   fat_g: number | null;
   fiber_g: number | null;
   status: "active" | "retired";
+  created_at: string;
+  uses: number; // meals whose newest estimate used it
+  last_used: string | null; // that meal's local time
 };
+
+const shortDate = (iso: string) => new Date(iso.slice(0, 10) + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const usage = (f: Food) =>
+  f.uses === 0
+    ? `not used yet · added ${shortDate(f.created_at)}`
+    : `used in ${f.uses} meal${f.uses === 1 ? "" : "s"} · last ${shortDate(f.last_used!)}`;
 
 // What every prompt is told about you (SPEC §3, principle 9). Both parts are optional:
 // notes are yours to write; remembered foods are kept by the replies themselves.
@@ -91,6 +100,7 @@ export function Memory() {
               {f.serving} · {n(f.kcal)} kcal · P{n(f.protein_g)} C{n(f.carbs_g)} F{n(f.fat_g)}
               {f.fiber_g !== null && ` · fiber ${n(f.fiber_g)} g`}
             </p>
+            <p class="muted small food-usage">{usage(f)}</p>
           </li>
         ))}
       </ul>

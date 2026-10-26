@@ -41,10 +41,24 @@ memory.delete("/notes/:id", async (c) => {
   return res.meta.changes ? c.json({ ok: true }) : c.json({ error: "not_found" }, 404);
 });
 
+// Each food with how often it's been used: meals whose newest estimate lists its code, and
+// the latest such meal. Derived at read time, so it's never stale and needs no backfill.
+// It's what a later cleanup of rarely used foods will be judged on (SPEC §11).
 memory.get("/foods", async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT code, name, serving, kcal, protein_g, carbs_g, fat_g, fiber_g, status, updated_at FROM foods
-     WHERE user_id = ?1 ORDER BY status, CAST(substr(code, 2) AS INTEGER)`,
+    `SELECT f.code, f.name, f.serving, f.kcal, f.protein_g, f.carbs_g, f.fat_g, f.fiber_g, f.status, f.created_at, f.updated_at,
+       COALESCE(u.uses, 0) AS uses, u.last_used
+     FROM foods f
+     LEFT JOIN (
+       SELECT j.value AS code, COUNT(*) AS uses, MAX(m.taken_at) AS last_used
+       FROM meals m
+       JOIN analyses a ON a.id = (SELECT id FROM analyses x WHERE x.user_id = ?1 AND x.meal_id = m.id AND x.skipped = 0
+                                  ORDER BY x.created_at DESC LIMIT 1),
+         json_each(json_extract(a.payload, '$.foods_used')) j
+       WHERE m.user_id = ?1 AND m.deleted_at IS NULL
+       GROUP BY j.value
+     ) u ON u.code = f.code
+     WHERE f.user_id = ?1 ORDER BY f.status, CAST(substr(f.code, 2) AS INTEGER)`,
   )
     .bind(c.get("user").id)
     .all();
