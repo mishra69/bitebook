@@ -493,3 +493,22 @@ The Trends chart also takes Cadence's reading pattern: drag across it and a pill
 the top tracks the finger and stays after it lifts. The drag is taken on a `<div>` with
 `touch-action: none`, because WebKit ignores `touch-action` on SVG and the page would
 otherwise scroll mid-read.
+
+## D32 · 2026-10-27 · Uploads: catch a hang in seconds, and don't call it "offline"
+
+The upload log (D23) settled the slow uploads. Every request either finished in 1 to 2.6
+seconds or hung completely until its timeout (23 to 45 seconds), and the retry then went
+straight through. The app treated each timeout as being offline: it said "Offline" and
+waited 5, then 15, then 60 seconds before retrying. Two meals on 2026-10-26 took about 2
+and 3½ minutes. Relaunching helped because it dropped the hung request for a fresh one.
+The likely cause is iOS reusing a connection that has silently died; the app can't see or
+choose connections, but it can stop waiting on them.
+
+- **File uploads go through XHR**, for its upload progress events. If no bytes move for 8
+  seconds (or no answer comes 15 seconds after the last byte), the request is dropped and
+  retried. The size-based timeout stays as a backstop.
+- **A hang, timeout or abandoned request while the phone reports being online is
+  "stalled", not "offline":** retried after 1, 3, 10, then 30 seconds, and the status line
+  says the meal is waiting and will retry, not that the phone is offline. A real network
+  failure is still reported as offline, with the slower backoff.
+- The log records each stall, with how many bytes had gone out, to confirm the cause.

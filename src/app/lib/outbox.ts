@@ -99,12 +99,15 @@ function changed(patch: Partial<SyncState> = {}) {
 }
 
 const RETRY_DELAYS = [5_000, 15_000, 60_000, 300_000];
+// A stalled request isn't a lost network: a fresh one usually goes straight through (D32).
+const STALL_RETRY_DELAYS = [1_000, 3_000, 10_000, 30_000];
 let retryIndex = 0;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let running: Promise<void> | null = null;
 let currentUser: string | null = null;
 
 class Offline extends Error {}
+class Stalled extends Error {} // hung or timed out with the network up: retry soon, quietly
 class SignedOut extends Error {}
 class Rejected extends Error {}
 class Removed extends Error {} // the user deleted the meal while it was uploading
@@ -188,7 +191,8 @@ export function sync(): Promise<void> {
         changed({ signedOut: true });
       } else {
         changed({ offline: e instanceof Offline, lastError: e instanceof Offline ? null : String((e as Error).message ?? e) });
-        const delay = RETRY_DELAYS[Math.min(retryIndex++, RETRY_DELAYS.length - 1)];
+        const delays = e instanceof Stalled ? STALL_RETRY_DELAYS : RETRY_DELAYS;
+        const delay = delays[Math.min(retryIndex++, delays.length - 1)];
         diag("retry_scheduled", { delayMs: delay, error: String((e as Error).message ?? e) });
         retryTimer = setTimeout(() => sync(), delay);
       }
@@ -282,8 +286,64 @@ async function uploadMeal(meal: OutboxMeal) {
 }
 
 // Generous for a slow connection (≈100 KB/s), but finite: a request that never settles
-// would otherwise block every later upload.
+// would otherwise block every later upload. Uploads also have a stall watchdog (below).
 const timeoutFor = (body: BodyInit | null | undefined) => 20_000 + (body instanceof Blob ? body.size / 100 : 0);
+
+// On iPhone an upload sometimes hangs outright: no bytes move, and only a timeout ends it,
+// while a fresh request goes through in a second or two (seen in the upload log, D32). So
+// file uploads go through XHR, which reports progress: with no progress for this long, the
+// request is dropped and retried at once.
+const UPLOAD_STALL_MS = 8_000;
+const RESPONSE_STALL_MS = 15_000; // after the last byte is sent; the server answers in about a second
+class StallError extends Error {
+  constructor(readonly sent: number) {
+    super("stalled");
+  }
+}
+
+function upload(url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init.method ?? "PUT", url);
+    for (const [k, v] of Object.entries((init.headers ?? {}) as Record<string, string>)) xhr.setRequestHeader(k, v);
+    let last = Date.now();
+    let sent = 0;
+    let uploaded = false;
+    const done = () => {
+      clearInterval(watchdog);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const watchdog = setInterval(() => {
+      if (Date.now() - last <= (uploaded ? RESPONSE_STALL_MS : UPLOAD_STALL_MS)) return;
+      done();
+      xhr.abort();
+      reject(new StallError(sent));
+    }, 1_000);
+    const onAbort = () => {
+      done();
+      xhr.abort();
+      reject(new DOMException("aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort);
+    xhr.upload.onprogress = (e) => {
+      last = Date.now();
+      sent = e.loaded;
+    };
+    xhr.upload.onload = () => {
+      uploaded = true;
+      last = Date.now();
+    };
+    xhr.onload = () => {
+      done();
+      resolve(new Response(xhr.responseText, { status: xhr.status, headers: { "Content-Type": "application/json" } }));
+    };
+    xhr.onerror = () => {
+      done();
+      reject(new TypeError("network error"));
+    };
+    xhr.send(init.body as Blob);
+  });
+}
 
 // Requests aborted because the app came back from the background (not timed out).
 const abandoned = new WeakSet<AbortController>();
@@ -301,11 +361,15 @@ async function request(url: string, init: RequestInit) {
   const what = { url: url.replace(/^\/api\//, ""), bytes: init.body instanceof Blob ? init.body.size : null };
   let res: Response;
   try {
-    res = await fetch(url, { ...init, signal: ctrl.signal });
+    res = init.body instanceof Blob ? await upload(url, init, ctrl.signal) : await fetch(url, { ...init, signal: ctrl.signal });
   } catch (e) {
-    const error = timedOut ? "timeout" : abandoned.has(ctrl) ? "abandoned" : ctrl.signal.aborted ? "aborted" : `network: ${(e as Error).message}`;
-    diag("request", { ...what, ms: Date.now() - started, timeoutMs: timeout, error });
-    throw new Offline("offline"); // network down, timed out, or abandoned on return to the app
+    const error =
+      e instanceof StallError ? "stalled" : timedOut ? "timeout" : abandoned.has(ctrl) ? "abandoned" : ctrl.signal.aborted ? "aborted" : `network: ${(e as Error).message}`;
+    diag("request", { ...what, ms: Date.now() - started, timeoutMs: timeout, error, ...(e instanceof StallError ? { sent: e.sent } : {}) });
+    // Hung, timed out or abandoned while the phone says it's online: try again soon, and
+    // don't tell the user they're offline. A real network failure is reported as one.
+    if ((e instanceof StallError || timedOut || abandoned.has(ctrl)) && navigator.onLine) throw new Stalled("stalled");
+    throw new Offline("offline");
   } finally {
     clearTimeout(timer);
     if (inflight === ctrl) inflight = null;

@@ -69,6 +69,28 @@ test("an upload frozen mid-request is abandoned and redone when the app comes ba
     );
 });
 
+test("a hung upload is dropped by the stall watchdog and retried, without claiming to be offline", async ({ page, context, request }) => {
+  await openApp(page);
+  // The first display upload hangs, as uploads sometimes do on an iPhone (D32); later ones go through.
+  let hung = false;
+  await context.route("**/api/photos/*/display", (r) => {
+    if (r.request().method() === "PUT" && !hung) {
+      hung = true;
+      return; // never answered
+    }
+    return r.continue();
+  });
+  await captureMeal(page, ["side.png"], "hung upload");
+  await expect(page.locator(".sync-line")).not.toContainText("Offline", { timeout: 2_000 });
+  await serverMeal(request, "hung upload"); // well inside the old 23-second timeout plus a 5-second wait
+  expect(hung).toBe(true);
+  await expect(page.locator(".sync-line")).not.toContainText("Offline");
+  await expect
+    .poll(() => sql("SELECT data FROM diag_events WHERE type = 'request'").map((r) => JSON.parse(r.data as string).error), { timeout: 30_000 })
+    .toContain("stalled");
+  await context.unroute("**/api/photos/*/display");
+});
+
 test("deleting a meal that hasn't uploaded removes it for good", async ({ page, context, request }) => {
   await openApp(page);
   await context.route("**/api/**", (r) => r.abort("internetdisconnected"));
