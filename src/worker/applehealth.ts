@@ -96,7 +96,11 @@ shortcut.get("/meals", async (c) => {
     done_url: `${origin}/shortcut/done/${run}`,
     meals: meals.map((m) => ({
       id: m.meal_id,
-      date: m.taken_at, // ISO 8601 with the meal's offset
+      // Written out, because "Get Dates from Input" read only the day from ISO 8601 and put
+      // every sample at noon. The meal's local time, which is the phone's unless it has
+      // changed zones since.
+      date: shortcutDate(m.taken_at),
+      date_iso: m.taken_at, // the exact instant, with its offset
       kcal: round(m.kcal),
       protein_g: round(m.protein_g),
       carbs_g: round(m.carbs_g),
@@ -129,6 +133,14 @@ shortcut.post("/done/:run", async (c) => {
   ]);
   return c.json({ ok: true, logged: latest.length });
 });
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// e.g. "October 26, 2026 at 9:47 PM"
+export function shortcutDate(iso: string) {
+  const h = Number(iso.slice(11, 13));
+  const time = `${h % 12 || 12}:${iso.slice(14, 16)} ${h < 12 ? "AM" : "PM"}`;
+  return `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}, ${iso.slice(0, 4)} at ${time}`;
+}
 
 const round = (v: number | null) => (v === null ? 0 : Math.round(v * 10) / 10);
 

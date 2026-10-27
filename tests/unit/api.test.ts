@@ -68,3 +68,12 @@ describe("signed photo links for the model provider", () => {
     expect(await checkImageLink({ SESSION_SECRET: "other" } as any, photo, exp, sig, now)).toBe(false);
   });
 });
+
+describe("dates for the Apple Health Shortcut (D34)", () => {
+  it("are written out with a 12-hour time, in the meal's local time", async () => {
+    const { shortcutDate } = await import("../../src/worker/applehealth");
+    expect(shortcutDate("2026-10-26T21:47:53-07:00")).toBe("October 26, 2026 at 9:47 PM");
+    expect(shortcutDate("2026-10-26T00:05:00-07:00")).toBe("October 26, 2026 at 12:05 AM");
+    expect(shortcutDate("2026-10-26T12:30:00+05:30")).toBe("October 26, 2026 at 12:30 PM");
+  });
+});

@@ -126,6 +126,10 @@ function Guide({ url, keyValue }: { url: string; keyValue: string }) {
           After <b>End Repeat</b>: <b>Get Dictionary Value</b> <code>done_url</code> in <i>Contents of URL</i>, then <b>Get Contents of URL</b>{" "}
           on it with Method <b>POST</b> and the same Authorization header. This tells Bitebook the meals are in Health, so they're never sent twice.
         </li>
+        <li>
+          Check each <b>Log Health Sample</b>: its Value must be the <i>Dictionary Value</i> from the step just above it (tap it to see
+          which step it comes from; Shortcuts names them all alike), and its Date must be <i>Dates</i>.
+        </li>
         <li>Run it once by hand and allow Health access when asked. The first run sends every past meal.</li>
         <li>
           Automation tab → + → <b>Time of Day</b>, 11:45 PM, Daily → <b>Run Immediately</b> → run “Bitebook to Health”.

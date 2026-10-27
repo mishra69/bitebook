@@ -545,3 +545,13 @@ A web app can't write to HealthKit. An iOS Shortcut can, with "Log Health Sample
 - **The first run sends every past meal** (up to 200 per run), so Health's history starts
   when Bitebook's did.
 - Unknown fiber is left out, not sent as zero.
+
+## D35 · 2026-10-27 · Apple Health: written-out dates; the first run's lessons
+
+The first real run (31 meals) put every sample on the right day but at 12:00: Shortcuts'
+"Get Dates from Input" read only the day from ISO 8601. `date` is now written out with a
+12-hour time in the meal's local time ("October 26, 2026 at 9:47 PM"), and `date_iso` keeps
+the exact instant. Two other errors were in the hand-built Shortcut, not Bitebook: Total Fat
+had no Date (so all fat landed at the time of the run), and Protein's value was tied to the
+carbs step (each meal got the previous meal's carbs). Both are easy to make, because
+Shortcuts labels every variable "Dictionary Value"; the Settings guide now warns about it.
