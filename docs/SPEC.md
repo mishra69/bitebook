@@ -302,10 +302,8 @@ that.
 
 Still to check, then delete this section:
 
-- **Apple Health:** build the Shortcut from Settings → Apple Health. Does "Get Dates from
-  Input" read the meal's date (ISO 8601 with offset)? Do the samples land at the meal's
-  time in Health? Does the 11:45 pm automation run without asking? Does Settings show the
-  run afterwards?
+- **Apple Health:** checked 2026-10-27: 31 meals at their own times, with values matching
+  Bitebook's. Still to see: does the 11:45 pm automation run on its own?
 
 - **Question notifications:** when a run asks something, does the notification arrive, and
   does it open the meal? Is the "Waiting for your answer" card on Today easy to spot?
