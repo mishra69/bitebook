@@ -512,3 +512,14 @@ choose connections, but it can stop waiting on them.
   says the meal is waiting and will retry, not that the phone is offline. A real network
   failure is still reported as offline, with the slower backoff.
 - The log records each stall, with how many bytes had gone out, to confirm the cause.
+
+## D33 · 2026-10-27 · Each API batch records how the request was made
+
+For the corpus, a batch must say everything the model was given and how it was asked. The
+prompt text and the photos (immutable display copies) were already stored. The request
+settings were only in the code at whatever version was deployed. Now `batches.request_params`
+(migration 0015) records them as sent: provider, model id, reasoning effort, output format
+(schema by name and version), token cap, and how the photos went (count, signed links,
+which copy, labelled by file name). Chat batches leave it null: the chat app's settings
+aren't visible to Bitebook. Batches before this have none either; their settings were the
+ones in this change.

@@ -43,6 +43,31 @@ images.get("/:photo/:exp/:sig", async (c) => {
 // ── One model call ──────────────────────────────────────────────────────────
 
 type Images = { name: string; url: string }[];
+
+// Everything sent besides the messages. Stored on the batch as it was sent (D33), so the
+// corpus records how each run was made, not just what it was shown.
+function requestSettings(model: string) {
+  return {
+    model,
+    // Held to the reply schema where the model supports it; validated either way.
+    response_format: { type: "json_schema", json_schema: { name: "bitebook_reply", strict: true, schema: REPLY_JSON_SCHEMA } },
+    reasoning: { effort: "medium" },
+    usage: { include: true },
+    max_tokens: 16_000,
+  };
+}
+
+// The stored form: the schema by name and version rather than in full (the code holds it),
+// plus how the photos were sent.
+const recordedSettings = (model: string, images: Images) => {
+  const { response_format, ...rest } = requestSettings(model);
+  return {
+    provider: "openrouter",
+    ...rest,
+    response_format: { type: response_format.type, schema: "bitebook.reply/1", name: response_format.json_schema.name, strict: true },
+    images: { count: images.length, via: "signed_url", copy: "display (1600 px JPEG, quality 0.8)", labelled: "file name before each" },
+  };
+};
 type CallResult = { text: string; model: string; usage: RunUsage };
 
 async function callModel(env: ApiEnv, model: string, prompt: string, images: Images, stubFacts: StubFacts): Promise<CallResult> {
@@ -65,15 +90,7 @@ async function callModel(env: ApiEnv, model: string, prompt: string, images: Ima
       "HTTP-Referer": "https://bitebook.mishabhi.workers.dev",
       "X-Title": "Bitebook",
     },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: "user", content }],
-      // Held to the reply schema where the model supports it; validated either way.
-      response_format: { type: "json_schema", json_schema: { name: "bitebook_reply", strict: true, schema: REPLY_JSON_SCHEMA } },
-      reasoning: { effort: "medium" },
-      usage: { include: true },
-      max_tokens: 16_000,
-    }),
+    body: JSON.stringify({ ...requestSettings(model), messages: [{ role: "user", content }] }),
   });
   const body = (await res.json().catch(() => null)) as {
     model?: string;
@@ -211,6 +228,9 @@ async function runJob(env: ApiEnv, origin: string, job: Job): Promise<string | n
     meal.photos.map(async (p) => ({ name: photoFileName(batchKey(0), p.position, p.taken_at ?? meal.taken_at), url: await imageLink(env, origin, p.id) })),
   );
 
+  await env.DB.prepare("UPDATE batches SET request_params = ?2 WHERE id = ?1")
+    .bind(batchId, JSON.stringify(recordedSettings(job.model, images)))
+    .run();
   let call: CallResult;
   try {
     call = await callModel(env, job.model, prompt, images, { batchId, keys: [batchKey(0)], note: meal.note, revisionInput: revision?.input ?? null });

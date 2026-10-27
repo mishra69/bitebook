@@ -136,7 +136,7 @@ rows and files for good.
 
 ## 4. Data model (D1)
 
-> **Tier:** Contract · **Verified:** 2026-10-24 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-27 · **Expires:** 2027-04-17
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
@@ -144,7 +144,7 @@ rows and files for good.
 > `voice_notes` (0010), `foods.fiber_g` (0011),
 > `diag_events` (0012, the phone's upload log, D23), `push_subscriptions` and
 > `reminders_sent` (0013, D25), the API path's `users.api_model`, batch cost columns,
-> open questions and `analysis_jobs` (0014, D28).
+> open questions and `analysis_jobs` (0014, D28), `batches.request_params` (0015, D33).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
