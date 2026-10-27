@@ -1,5 +1,6 @@
 import { AutoAnalysis } from "./AutoAnalysis";
 import { ReminderSettings } from "./Reminders";
+import { AppleHealth } from "./AppleHealth";
 
 // Everything about how the app behaves for you, as opposed to what it knows about you
 // (Memory). Reached from the gear in the header.
@@ -8,6 +9,7 @@ export function Settings({ email, onSignOut }: { email: string; onSignOut: () =>
     <section class="settings" aria-label="Settings">
       <AutoAnalysis />
       <ReminderSettings />
+      <AppleHealth />
       <h2 class="section-title">Account</h2>
       <div class="card">
         <p>

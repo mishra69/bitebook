@@ -36,6 +36,7 @@ export async function purgeDeleted(env: Env, now = Date.now()): Promise<number> 
     await env.DB.batch([
       env.DB.prepare("DELETE FROM analysis_jobs WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
       env.DB.prepare("UPDATE questions SET meal_id = NULL WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
+      env.DB.prepare("DELETE FROM health_exports WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
       env.DB.prepare("DELETE FROM analyses WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
       env.DB.prepare("DELETE FROM voice_notes WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),
       env.DB.prepare("DELETE FROM photos WHERE meal_id IN (SELECT value FROM json_each(?1))").bind(ids),

@@ -247,3 +247,8 @@ ul { margin: 0; padding-left: 1.2rem; }
 .trend-table td, .trend-table th { padding: 0.25rem 0.3rem; text-align: right; border-bottom: 1px solid var(--grid); }
 .trend-table td:first-child, .trend-table th:first-child { text-align: left; }
 .link.back { display: inline-block; margin-bottom: 0.25rem; }
+
+/* Apple Health setup (D34). */
+.apple-health .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; word-break: break-all; background: var(--bg); padding: 0.5rem; border-radius: 8px; }
+.guide .steps ol { padding-left: 1.1rem; margin: 0.3rem 0; }
+.guide code { font-size: 0.85em; }

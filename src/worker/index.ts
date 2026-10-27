@@ -10,6 +10,7 @@ import { push } from "./push";
 import { wakeAll } from "./clock";
 import { analysis, images } from "./analyze";
 import { overview } from "./overview";
+import { appleHealth, shortcut } from "./applehealth";
 
 export type AppEnv = {
   Bindings: Env & { AUTH_DISABLED?: string; SESSION_SECRET?: string };
@@ -41,11 +42,13 @@ api.route("/", diag);
 api.route("/", push);
 api.route("/", analysis);
 api.route("/", overview);
+api.route("/", appleHealth);
 
 const app = new Hono<AppEnv>();
 app.route("/api", api);
 app.route("/auth", auth);
 app.route("/img", images); // signed photo links for the model provider (no session)
+app.route("/shortcut", shortcut); // the Apple Health Shortcut (its own key, no session; D34)
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 // Unexpected errors: log the details (Workers Logs keeps them), answer without them.
 app.onError((err, c) => {

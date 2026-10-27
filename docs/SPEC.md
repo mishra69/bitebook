@@ -144,7 +144,8 @@ rows and files for good.
 > `voice_notes` (0010), `foods.fiber_g` (0011),
 > `diag_events` (0012, the phone's upload log, D23), `push_subscriptions` and
 > `reminders_sent` (0013, D25), the API path's `users.api_model`, batch cost columns,
-> open questions and `analysis_jobs` (0014, D28), `batches.request_params` (0015, D33).
+> open questions and `analysis_jobs` (0014, D28), `batches.request_params` (0015, D33),
+> `health_keys`, `health_runs` and `health_exports` (0016, D34).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -301,6 +302,11 @@ that.
 
 Still to check, then delete this section:
 
+- **Apple Health:** build the Shortcut from Settings → Apple Health. Does "Get Dates from
+  Input" read the meal's date (ISO 8601 with offset)? Do the samples land at the meal's
+  time in Health? Does the 11:45 pm automation run without asking? Does Settings show the
+  run afterwards?
+
 - **Question notifications:** when a run asks something, does the notification arrive, and
   does it open the meal? Is the "Waiting for your answer" card on Today easy to spot?
 - **The API path trial:** turn it on in ⚙︎ Settings → Automatic analysis. Do estimates arrive
@@ -385,21 +391,14 @@ in Settings, daily targets for the running total.
 voice notes (D21), fiber (D22), missed meals without a photo (D24), reminders (D25), the
 API path with questions and corrections (D27, D28), which moved ahead of the rest on
 2026-10-24, and the running total, Trends and question notifications (D30), and per-user clocks in place
-of polling (D31).
+of polling (D31), and the Apple Health export (D34).
 The remaining on-device checks for capture are in §7.*
 
-7. **Apple Health sync** (added 2026-10-23, not designed yet). After an analysis, write each
-   meal's energy, protein, carbs, fat and fiber to Apple Health as dietary samples at the
-   meal's time. A web app can't write to HealthKit, so the likely route is an iOS
-   Shortcut: it fetches newly analyzed meals from a Bitebook endpoint (with a long-lived
-   token made for it, since Shortcuts can't do Google sign-in) and logs them with "Log
-   Health Sample". The endpoint must hand each meal over once, because a Shortcut can't
-   delete samples it already wrote.
-8. **Upload draft photos as they're taken**, so Save is instant and photos survive a
+7. **Upload draft photos as they're taken**, so Save is instant and photos survive a
    lost phone mid-meal. Needs a nightly cleanup of R2 files no saved meal refers to
    (discarded drafts). Demoted 2026-10-24: uploads were slow with the app open, so this
    wouldn't have helped; wait for the upload log (D23) to show why.
-9. The roll-off script (demoted 2026-10-24).
+8. The roll-off script (demoted 2026-10-24).
 
 Parked, to decide after the API trial (numbers from the first real runs, 2026-10-24:
 Opus 5.5 cost 4.4¢ for a one-photo meal, 7.8¢ for three photos, 7.1¢ for a revision;

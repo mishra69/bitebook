@@ -523,3 +523,25 @@ settings were only in the code at whatever version was deployed. Now `batches.re
 which copy, labelled by file name). Chat batches leave it null: the chat app's settings
 aren't visible to Bitebook. Batches before this have none either; their settings were the
 ones in this change.
+
+## D34 · 2026-10-27 · Apple Health through an iOS Shortcut, once a night, settled meals only
+
+A web app can't write to HealthKit. An iOS Shortcut can, with "Log Health Sample".
+
+- **A key for the Shortcut.** It can't do Google sign-in, so Settings → Apple Health makes a
+  key (shown once; only its SHA-256 is stored, migration 0016). It's sent as a bearer
+  header to `/shortcut/*`, which has no session. A new key replaces the old one, and
+  "Turn off" revokes it. Each family member makes their own.
+- **The Shortcut** asks `GET /shortcut/meals` for meals not yet sent. For each it logs
+  Dietary Energy, Protein, Carbohydrates, Total Fat and (when known) Fiber, dated at the
+  meal's time. Then it posts to the run's `done_url`. Meals are recorded as sent only on
+  that confirmation, so a run that fails midway hands them out again. The cost is a
+  possible duplicate if only the confirmation fails.
+- **Only settled estimates go**, because a Shortcut can add samples but never change or
+  delete them: analyzed, no question waiting, nothing queued, unchanged for an hour. A meal
+  re-estimated after being sent keeps its old numbers in Health, and Settings counts these.
+- **Once a night**, at 11:45 pm, from a personal automation that runs without asking (the
+  user's choice). A meal finished later goes the next night, still at its own time.
+- **The first run sends every past meal** (up to 200 per run), so Health's history starts
+  when Bitebook's did.
+- Unknown fiber is left out, not sent as zero.
