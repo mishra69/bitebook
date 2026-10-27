@@ -40,7 +40,7 @@ test("the Shortcut gets settled meals once, with a date and plain numbers, and c
   expect(ids).toEqual(expect.arrayContaining([a, b]));
   expect(ids).not.toContain(fresh); // not settled yet
   const meal = first.meals.find((m: { id: string }) => m.id === a);
-  expect(meal).toEqual({ id: a, date: "2026-10-26T08:30:00-07:00", kcal: 512.3, protein_g: 20, carbs_g: 60, fat_g: 15, fiber_g: 6 });
+  expect(meal).toEqual({ id: a, date: "October 26, 2026 08:30", date_iso: "2026-10-26T08:30:00-07:00", kcal: 512.3, protein_g: 20, carbs_g: 60, fat_g: 15, fiber_g: 6 });
   expect(first.meals.find((m: { id: string }) => m.id === b)).not.toHaveProperty("fiber_g"); // unknown, not zero
   expect(first.done_url).toMatch(/\/shortcut\/done\/[0-9A-Z]{26}$/);
 
