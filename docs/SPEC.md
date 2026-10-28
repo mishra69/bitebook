@@ -290,7 +290,7 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
 
 ## 7. Capture: what still needs an iPhone
 
-> **Tier:** Plan · **Verified:** 2026-10-27 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-28 · **Expires:** 2026-12-17
 
 Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). Checked on
 the iPhone by 2026-10-23: reload behind the camera, offline save then upload on
@@ -319,9 +319,11 @@ Still to check, then delete this section:
 
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
   should be saved, with a note saying so.
-- **Slow uploads:** hung requests are now dropped and retried within seconds (D32). Do
-  uploads finish without needing a relaunch? The upload log (`diag_events`) shows each
-  stall and how many bytes had gone out.
+- **Slow uploads:** the watchdog (D32) caught the hangs but retries hung too, every one with
+  0 bytes sent, until a relaunch; meals still on the phone showed "?" thumbnails. Both point
+  at Blobs read back from IndexedDB going unreadable, so the outbox now keeps bytes (D36).
+  Do uploads finish without a relaunch, and do waiting meals show their photos? The upload
+  log (`diag_events`) shows each stall, its bytes sent, and any `blob_unreadable`.
 
 ## 8. Roll-off of originals
 

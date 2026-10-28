@@ -68,13 +68,54 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
   }
 }
 
-export const putMeal = (m: OutboxMeal) => tx("readwrite", (s) => s.put(m)).then(() => changed());
+// Files are stored as bytes, not Blobs (D36). On iPhone a Blob read back from IndexedDB
+// can go unreadable while the page lives on: its thumbnail shows a broken image and its
+// upload hangs with no bytes sent, until a reload. A Blob made from bytes in memory can't.
+type Bytes<T> = { [K in keyof T]: T[K] extends Blob ? ArrayBuffer | Blob : T[K] };
+type StoredMeal = Omit<OutboxMeal, "photos" | "voice"> & { photos: Bytes<OutboxPhoto>[]; voice?: Bytes<OutboxVoice> };
+
+const toBytes = (b: Blob) => b.arrayBuffer();
+async function toBlob(v: ArrayBuffer | Blob, type: string, meal: string): Promise<Blob> {
+  if (v instanceof ArrayBuffer) return new Blob([v], { type });
+  // Saved before D36: copy it into memory while it can still be read.
+  try {
+    return new Blob([await v.arrayBuffer()], { type });
+  } catch (e) {
+    diag("blob_unreadable", { meal, error: String((e as Error).message ?? e) });
+    return v;
+  }
+}
+
+async function store(m: OutboxMeal): Promise<StoredMeal> {
+  return {
+    ...m,
+    photos: await Promise.all(m.photos.map(async (p) => ({ ...p, original: await toBytes(p.original), display: await toBytes(p.display) }))),
+    voice: m.voice && { ...m.voice, blob: await toBytes(m.voice.blob) },
+  };
+}
+
+async function load(m: StoredMeal): Promise<OutboxMeal> {
+  return {
+    ...m,
+    photos: await Promise.all(
+      m.photos.map(async (p) => ({ ...p, original: await toBlob(p.original, p.mime, m.id), display: await toBlob(p.display, "image/jpeg", m.id) })),
+    ),
+    voice: m.voice && { ...m.voice, blob: await toBlob(m.voice.blob, m.voice.mime, m.id) },
+  };
+}
+
+// Converted before the transaction opens: one left waiting on anything else commits early.
+export const putMeal = async (m: OutboxMeal) => {
+  const stored = await store(m);
+  await tx("readwrite", (s) => s.put(stored));
+  changed();
+};
 export const deleteMeal = (id: string) => tx("readwrite", (s) => s.delete(id)).then(() => changed());
 const all = async (userId: string) =>
-  ((await tx("readonly", (s) => s.getAll())) as OutboxMeal[]).filter((m) => m.userId === userId);
+  Promise.all(((await tx("readonly", (s) => s.getAll())) as StoredMeal[]).filter((m) => m.userId === userId).map(load));
 export const listMeals = async (userId: string) =>
   (await all(userId)).filter((m) => !m.draft).sort((a, b) => b.takenAt.localeCompare(a.takenAt));
-const getMeal = async (id: string) => (await tx("readonly", (s) => s.get(id))) as OutboxMeal | undefined;
+const hasMeal = async (id: string) => (await tx("readonly", (s) => s.getKey(id))) !== undefined;
 export const getDraft = async (userId: string) => (await all(userId)).find((m) => m.draft) ?? null;
 
 // ── Sync ────────────────────────────────────────────────────────────────────
@@ -121,7 +162,7 @@ export async function removeFromOutbox(id: string) {
 }
 
 async function ensureQueued(id: string) {
-  if (!(await getMeal(id))) throw new Removed("removed");
+  if (!(await hasMeal(id))) throw new Removed("removed");
 }
 
 export function startSync(userId: string) {
@@ -176,7 +217,7 @@ export function sync(): Promise<void> {
           diag("meal_done", { meal: meal.id, sinceSaveMs: meal.savedAt ? Date.now() - meal.savedAt : null });
         } catch (e) {
           // Deleted mid-upload (its request was aborted): move on to the next meal.
-          if (e instanceof Removed || !(await getMeal(meal.id))) continue;
+          if (e instanceof Removed || !(await hasMeal(meal.id))) continue;
           if (!(e instanceof Rejected)) throw e;
           await putMeal({ ...meal, error: e.message });
         } finally {

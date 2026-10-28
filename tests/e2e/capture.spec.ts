@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { allSaved, captureMeal, openApp, serverMeal, sql } from "./helpers";
 
 test("a meal uses its photo's EXIF time, survives a reload mid-draft, and uploads", async ({ page, request }) => {
@@ -42,6 +42,49 @@ test("a meal saved offline waits in the outbox and uploads when the network retu
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await serverMeal(request, "saved while offline");
   await expect(page.locator(".meal", { hasText: "saved while offline" }).locator("a.meal-link")).toHaveCount(1);
+});
+
+// Reads (or rewrites) the outbox record of the meal with this note, in the page.
+const outboxRecord = (page: Page, note: string, toBlobs = false) =>
+  page.evaluate(
+    ([note, toBlobs]) =>
+      new Promise<{ display: string; original: string }>((resolve, reject) => {
+        const open = indexedDB.open("bitebook");
+        open.onsuccess = () => {
+          const store = open.result.transaction("outbox", "readwrite").objectStore("outbox");
+          const all = store.getAll();
+          all.onsuccess = () => {
+            const m = all.result.find((x: { note: string }) => x.note === note);
+            const p = m.photos[0];
+            const kinds = { display: p.display.constructor.name, original: p.original.constructor.name };
+            if (!toBlobs) return resolve(kinds);
+            // As meals were stored before D36.
+            p.display = new Blob([p.display], { type: "image/jpeg" });
+            p.original = new Blob([p.original], { type: p.mime });
+            store.put(m).onsuccess = () => resolve(kinds);
+          };
+        };
+        open.onerror = () => reject(open.error);
+      }),
+    [note, toBlobs] as const,
+  );
+
+test("photos wait in the outbox as bytes, and one stored as a Blob still shows and uploads", async ({ page, context, request }) => {
+  await openApp(page);
+  await context.route("**/api/**", (r) => r.abort("internetdisconnected"));
+  await captureMeal(page, ["side.png"], "stored as bytes");
+  // Not Blobs: on iPhone a Blob read back from IndexedDB can go unreadable (D36).
+  expect(await outboxRecord(page, "stored as bytes")).toEqual({ display: "ArrayBuffer", original: "ArrayBuffer" });
+
+  await outboxRecord(page, "stored as bytes", true);
+  await page.reload();
+  const thumb = page.locator(".meal", { hasText: "stored as bytes" }).locator("img.thumb");
+  await expect.poll(() => thumb.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+
+  await context.unroute("**/api/**");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  const meal = await serverMeal(request, "stored as bytes");
+  expect(meal.photos).toHaveLength(1);
 });
 
 test("an upload frozen mid-request is abandoned and redone when the app comes back", async ({ page, context, request }) => {

@@ -555,3 +555,17 @@ the exact instant. Two other errors were in the hand-built Shortcut, not Biteboo
 had no Date (so all fat landed at the time of the run), and Protein's value was tied to the
 carbs step (each meal got the previous meal's carbs). Both are easy to make, because
 Shortcuts labels every variable "Dictionary Value"; the Settings guide now warns about it.
+
+## D36 · 2026-10-28 · The outbox keeps files as bytes, not Blobs
+
+D32's watchdog caught the hung uploads, but on the phone the retries hung too: every
+attempt for a file sent 0 bytes in 8 seconds, for as long as an hour, while right after a
+relaunch the same file went up in about a second. Meals waiting on the phone also showed a
+broken-image "?" instead of their thumbnail. Both fit a known WebKit weakness: a Blob read
+back from IndexedDB can become unreadable while the page lives on, and only a fresh page
+reads it again.
+
+So the outbox now stores photos and voice notes as ArrayBuffers and makes in-memory Blobs
+from them when it reads a meal back (`src/app/lib/outbox.ts`). Meals saved before this are
+copied into memory as they're read; if that read fails, the phone logs `blob_unreadable`.
+The watchdog stays, in case the hangs have a second cause.
