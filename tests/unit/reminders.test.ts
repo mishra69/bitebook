@@ -29,7 +29,7 @@ describe("the nightly reminder", () => {
     expect(kinds(user({ tz: "Asia/Kolkata" }), "2026-10-22T22:30:00+05:30")).toEqual(["nightly 2026-10-22"]);
   });
   it("says how many meals were logged, and opens the timeline", () => {
-    expect(nightlyMessage(0)).toMatchObject({ body: "Nothing logged today. Tap to add what you ate.", navigate: "/#/timeline" });
+    expect(nightlyMessage(0)).toMatchObject({ body: "Nothing logged today. Tap to add what you ate.", navigate: "/#/" });
     expect(nightlyMessage(1).body).toBe("1 meal logged today. Missed anything? Tap to add it.");
     expect(nightlyMessage(3).body).toBe("3 meals logged today. Missed anything? Tap to add it.");
   });

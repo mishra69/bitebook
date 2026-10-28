@@ -569,3 +569,20 @@ So the outbox now stores photos and voice notes as ArrayBuffers and makes in-mem
 from them when it reads a meal back (`src/app/lib/outbox.ts`). Meals saved before this are
 copied into memory as they're read; if that read fails, the phone logs `blob_unreadable`.
 The watchdog stays, in case the hangs have a second cause.
+
+## D37 · 2026-10-28 · One Meals tab; Trends and Settings behind the avatar
+
+With meals in Apple Health (D34), Health's own charts cover long-term trends for anyone
+with the Shortcut, and Bitebook's Trends became the less-used screen. It stays, for anyone
+without the Shortcut, or on Android, and it costs nothing to keep. But it leaves the tab
+bar.
+
+- **Today and Timeline are one tab, Meals:** capture, questions waiting, the running total
+  and today's meals on top, then earlier days, paging back as Timeline did. "Add a meal I
+  missed" sits under today's meals. Old `#/timeline` links (and notifications already
+  delivered) open Meals.
+- **Tabs: Meals and Memory.** An avatar (the email's initial) replaces the ⚙︎ of D29 and
+  opens a menu with Trends and Settings.
+- A missed meal for yesterday now appears under yesterday as soon as it uploads.
+- The Apple Health Shortcut keeps its "if fiber" check: an estimate may still leave fiber
+  unknown, and a sample without a value would stop the night's run before it confirms.

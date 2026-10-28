@@ -19,10 +19,10 @@ export function MealDetail({ id }: { id: string }) {
     load();
   }, [id]);
 
-  const back = () => (history.length > 1 ? history.back() : (location.hash = "#/timeline"));
+  const back = () => (history.length > 1 ? history.back() : (location.hash = "#/"));
 
   if (meal === null) return <p class="muted">Loading…</p>;
-  if (meal === "missing") return <p class="muted">This meal doesn't exist or was deleted. <a href="#/timeline">Timeline</a></p>;
+  if (meal === "missing") return <p class="muted">This meal doesn't exist or was deleted. <a href="#/">Meals</a></p>;
   if (meal === "error") return <p class="bad">Couldn't load this meal. Are you online?</p>;
 
   const date = new Date(meal.taken_at.slice(0, 10) + "T12:00:00");

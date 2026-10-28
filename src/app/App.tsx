@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { Analyze } from "./Analyze";
 import { Capture } from "./Capture";
 import { MealDetail } from "./MealDetail";
@@ -9,7 +9,7 @@ import { Settings } from "./Settings";
 import { TodayPanel } from "./TodayPanel";
 import { Trends } from "./Trends";
 import { GoogleSignIn } from "./SignIn";
-import { Timeline } from "./Timeline";
+import { EarlierDays } from "./EarlierDays";
 import { ToastHost } from "./Toast";
 import { startSync } from "./lib/outbox";
 import { refreshReminders } from "./lib/reminders";
@@ -97,11 +97,7 @@ export function App() {
     <main class="screen">
       <header class="app-header">
         <h1>Bitebook</h1>
-        {user && (
-          <a class="gear" href="#/settings" aria-label="Settings" aria-current={route.name === "settings" ? "page" : undefined}>
-            ⚙︎
-          </a>
-        )}
+        {user && <AccountMenu email={user.email} active={route.name === "settings" || route.name === "trends"} />}
       </header>
       {authState === "checking" && !user && <p class="muted">Loading…</p>}
       {authState === "error" && <p class="bad">The server isn't responding properly. Try again in a bit.</p>}
@@ -110,20 +106,18 @@ export function App() {
       {user && (
         <>
           <nav class="tabs" aria-label="Sections">
-            <a href="#/" aria-current={route.name === "today" ? "page" : undefined}>Today</a>
-            <a href="#/timeline" aria-current={route.name === "timeline" || route.name === "meal" ? "page" : undefined}>Timeline</a>
-            <a href="#/trends" aria-current={route.name === "trends" || route.name === "analyze" ? "page" : undefined}>Trends</a>
+            <a href="#/" aria-current={route.name === "meals" || route.name === "meal" ? "page" : undefined}>Meals</a>
             <a href="#/memory" aria-current={route.name === "memory" ? "page" : undefined}>Memory</a>
           </nav>
-          {route.name === "today" && (
+          {route.name === "meals" && (
             <>
               <Capture userId={user.id} missed={route.missed} />
               <TodayPanel />
               <ReminderOffer />
               <MealList userId={user.id} />
+              <EarlierDays />
             </>
           )}
-          {route.name === "timeline" && <Timeline userId={user.id} />}
           {route.name === "trends" && <Trends />}
           {route.name === "analyze" && <Analyze />}
           {route.name === "memory" && <Memory />}
@@ -134,5 +128,44 @@ export function App() {
       <p class="version-tag" data-version>{versionLabel(live)}</p>
       <ToastHost />
     </main>
+  );
+}
+
+// The avatar (D37): the less-used screens, out of the tab bar. Apple Health draws the
+// long-term charts for most people; Trends stays for those without the Shortcut.
+function AccountMenu({ email, active }: { email: string; active: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => {
+      if (e.type === "hashchange" || !ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    window.addEventListener("hashchange", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      window.removeEventListener("hashchange", close);
+    };
+  }, [open]);
+  return (
+    <div class="account" ref={ref}>
+      <button
+        class={`avatar${active ? " on" : ""}`}
+        aria-label="Account"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {email.charAt(0).toUpperCase()}
+      </button>
+      {open && (
+        <div class="account-menu" role="menu">
+          <p class="muted small">{email}</p>
+          <a role="menuitem" href="#/trends">Trends</a>
+          <a role="menuitem" href="#/settings">Settings</a>
+        </div>
+      )}
+    </div>
   );
 }

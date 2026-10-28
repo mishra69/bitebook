@@ -81,7 +81,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
     noteTimer.current = setTimeout(() => latest.current && setDraft(latest.current), 400);
   };
 
-  // Opened as #/missed (from Timeline): start a meal without a photo, unless one is
+  // Opened as #/missed (from Meals): start a meal without a photo, unless one is
   // already being composed. The hash goes back to #/ so a reload doesn't start another.
   useEffect(() => {
     if (!missed) return;

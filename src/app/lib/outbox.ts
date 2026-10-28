@@ -1,5 +1,6 @@
 import type { MealType, NewMeal } from "../../shared/meals";
 import { diag, flushDiag } from "./diag";
+import { mealsChanged } from "./notify";
 
 // Meals waiting to reach the server. A meal is written here the moment it's saved, so
 // capture works offline and survives the app being closed; it is deleted only after
@@ -215,6 +216,7 @@ export function sync(): Promise<void> {
           await uploadMeal(meal);
           await deleteMeal(meal.id);
           diag("meal_done", { meal: meal.id, sinceSaveMs: meal.savedAt ? Date.now() - meal.savedAt : null });
+          mealsChanged(); // a missed meal from an earlier day now belongs to that day's list
         } catch (e) {
           // Deleted mid-upload (its request was aborted): move on to the next meal.
           if (e instanceof Removed || !(await hasMeal(meal.id))) continue;

@@ -75,8 +75,13 @@ ul { margin: 0; padding-left: 1.2rem; }
   font-variant-numeric: tabular-nums;
 }
 .app-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
-.gear { font-size: 1.6rem; line-height: 1; color: var(--muted); text-decoration: none; padding: 0.4rem 0.2rem 0.4rem 0.8rem; }
-.gear[aria-current="page"] { color: var(--fg); }
+.account { position: relative; }
+.avatar { width: 2.2rem; height: 2.2rem; border-radius: 50%; border: 0; background: var(--card); color: var(--fg); font: inherit; font-weight: 700; cursor: pointer; }
+.avatar.on { background: var(--fg); color: var(--bg); }
+.account-menu { position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 10; min-width: 12rem; background: var(--card); border: 1px solid color-mix(in srgb, var(--muted) 30%, transparent); border-radius: 10px; padding: 0.4rem; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); }
+.account-menu p { margin: 0.3rem 0.6rem 0.4rem; overflow: hidden; text-overflow: ellipsis; }
+.account-menu a { display: block; padding: 0.6rem; border-radius: 8px; color: var(--fg); text-decoration: none; font-weight: 600; }
+.account-menu a:active { background: var(--bg); }
 .link { background: none; border: 0; color: var(--muted); font: inherit; text-decoration: underline; padding: 0.5rem 0; }
 .section-title { font-size: 0.95rem; margin: 1rem 0 0.5rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .sync-line { font-size: 0.9rem; color: var(--muted); min-height: 1.5em; margin: 0; }

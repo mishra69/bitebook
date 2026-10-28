@@ -90,7 +90,7 @@ export function nightlyMessage(mealsToday: number) {
       mealsToday === 0
         ? "Nothing logged today. Tap to add what you ate."
         : `${mealsToday} meal${mealsToday === 1 ? "" : "s"} logged today. Missed anything? Tap to add it.`,
-    navigate: "/#/timeline",
+    navigate: "/#/",
     tag: "nightly",
   };
 }

@@ -3,7 +3,7 @@ import { localDate, usualDay, useOverview } from "./lib/overview";
 
 const n = (v: number) => Math.round(v).toLocaleString();
 
-// The top of Today (D30): the model's questions waiting for an answer, the day's running
+// The top of Meals (D30, D37): the model's questions waiting for an answer, the day's running
 // total against a usual day, and, in chat mode, the meals waiting for a handoff.
 export function TodayPanel() {
   const o = useOverview(8);

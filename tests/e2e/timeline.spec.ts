@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openApp, seedMeal } from "./helpers";
 
-test("timeline groups by day, pages back, opens a meal, and deletes with undo", async ({ page, request }) => {
+test("earlier meals are grouped by day under today, pages back, opens a meal, and deletes with undo", async ({ page, request }) => {
   // 45 meals, three a day, ending on Oct 10 (local).
   for (let i = 0; i < 45; i++) {
     const day = new Date(Date.UTC(2026, 9, 10) - Math.floor(i / 3) * 86_400_000).toISOString().slice(0, 10);
@@ -9,7 +9,7 @@ test("timeline groups by day, pages back, opens a meal, and deletes with undo", 
     await seedMeal(request, `${day}T${hour}:00:00-05:00`, `seed ${i}`, ["breakfast", "lunch", "dinner"][i % 3]);
   }
 
-  await openApp(page, "#/timeline");
+  await openApp(page);
   await expect(page.locator(".section-title", { hasText: "Sat, Oct 10" })).toBeVisible();
   const firstPage = await page.locator("a.meal-link").count();
   expect(firstPage).toBeGreaterThanOrEqual(40);
@@ -22,7 +22,7 @@ test("timeline groups by day, pages back, opens a meal, and deletes with undo", 
   await expect(page.locator(".detail-photos img")).toHaveCount(1);
   await page.getByRole("button", { name: "Delete meal" }).click();
   await expect(page.locator(".toast")).toContainText("Deleted 08:00 breakfast");
-  await expect(page).toHaveURL(/#\/timeline$/);
+  await expect(page).toHaveURL(/#\/$/);
   await expect(page.locator(".meal", { hasText: "seed 0" })).toHaveCount(0);
 
   await page.locator(".toast").getByRole("button", { name: "Undo" }).click();
@@ -35,7 +35,7 @@ test("timeline groups by day, pages back, opens a meal, and deletes with undo", 
 test("a deleted meal can be restored from Recently deleted", async ({ page, request }) => {
   const id = await seedMeal(request, "2026-09-30T12:00:00-05:00", "to restore");
   await request.delete(`/api/meals/${id}`);
-  await openApp(page, "#/timeline");
+  await openApp(page);
   await expect(page.locator(".meal", { hasText: "to restore" })).toHaveCount(0);
   await page.getByRole("button", { name: "Recently deleted" }).click();
   await page.locator(".meals.deleted .meal", { hasText: "2026-09-30" }).getByRole("button", { name: "Restore" }).click();

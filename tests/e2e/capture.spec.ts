@@ -251,8 +251,9 @@ test("a voice note can be removed from the draft, and over-long ones are refused
   expect((await res.json()).detail).toBe("voice.duration");
 });
 
-test("a missed meal is added from Timeline with a voice note and no photo, and goes into the next prompt", async ({ page, request }) => {
-  await openApp(page, "#/timeline");
+test("a missed meal is added from Meals with a voice note and no photo, and goes into the next prompt", async ({ page, request }) => {
+  await openApp(page, "#/timeline"); // an old link: Timeline is part of Meals now (D37)
+  await expect(page.locator(".tabs a[aria-current=page]")).toHaveText("Meals");
   await page.getByRole("link", { name: "＋ Add a meal I missed" }).click();
   await expect(page.locator(".draft .missed-intro")).toContainText("A meal you missed");
   await expect(page.locator(".draft figure.thumb")).toHaveCount(0);
@@ -283,8 +284,8 @@ test("a missed meal is added from Timeline with a voice note and no photo, and g
   });
   expect(meal.taken_at.slice(0, 16)).toBe(`${ymd}T13:00`);
 
-  await page.goto("/#/timeline");
-  await expect(page.locator(".meal", { hasText: "missed lunch" }).locator(".no-photo")).toHaveCount(1);
+  // Listed under yesterday, without a reload.
+  await expect(page.locator(".timeline .meal", { hasText: "missed lunch" }).locator(".no-photo")).toHaveCount(1);
   for (const b of (await (await request.get("/api/batches?status=open")).json()).batches) await request.post(`/api/batches/${b.id}/abandon`);
   const res = await request.post("/api/batches", { data: { meal_ids: [meal.id] } });
   expect(res.status()).toBe(201);

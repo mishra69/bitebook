@@ -108,8 +108,8 @@ push.get("/push/status", async (c) => c.json({ devices: (await d1Store(c.env.DB)
 push.post("/push/test", async (c) => {
   const r = await send(c.env, c.get("user").id, {
     title: "Bitebook",
-    body: "Reminders are on. Tap to open your timeline.",
-    navigate: "/#/timeline",
+    body: "Reminders are on. Tap to open your meals.",
+    navigate: "/#/",
     tag: "test",
   });
   return c.json(r);

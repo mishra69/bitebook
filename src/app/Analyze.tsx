@@ -101,7 +101,7 @@ export function Analyze() {
     }).catch(() => null);
     setBusy(false);
     const d = res?.ok ? ((await res.json()) as { queued: number }) : null;
-    showToast({ text: d ? `Analyzing ${d.queued} meal${d.queued === 1 ? "" : "s"}. The estimates show on Timeline in a minute or two.` : "Couldn't queue them. Are you online?" });
+    showToast({ text: d ? `Analyzing ${d.queued} meal${d.queued === 1 ? "" : "s"}. The estimates show on Meals in a minute or two.` : "Couldn't queue them. Are you online?" });
     await load();
   };
 
@@ -115,7 +115,7 @@ export function Analyze() {
   if (pending === null) return error ? <p class="bad">{error}</p> : <p class="muted">Loading…</p>;
   return (
     <section class="analyze" aria-label="Analyze">
-      <a class="link back" href="#/trends">← Trends</a>
+      <button class="link back" onClick={() => (history.length > 1 ? history.back() : (location.hash = "#/"))}>← Back</button>
       {error && <p class="bad">{error}</p>}
       {open.map((b) => (
         <BatchCard key={b.id} batch={b} onAbandon={() => abandon(b.id)} onImported={load} />

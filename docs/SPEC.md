@@ -68,7 +68,7 @@ Laptop
 
 ## 3. Core flows
 
-> **Tier:** Core · **Verified:** 2026-10-24
+> **Tier:** Core · **Verified:** 2026-10-28
 
 **Capture.** Tap "New meal" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
@@ -88,7 +88,7 @@ describe each helping before saving. The server transcribes it with Whisper (Wor
 AI), and the prompt carries the transcript. The transcript isn't editable: if it's often
 wrong, the fix is a better transcriber, not hand-editing (D21).
 
-**A meal missed.** From Timeline, "Add a meal I missed" opens a draft without a photo:
+**A meal missed.** On Meals, "Add a meal I missed" opens a draft without a photo:
 pick the day (today or yesterday) and the meal type, and describe it in a voice note or
 a note. It gets that meal type's usual hour, and the prompt tells the model it's a
 description only (D24).
@@ -306,19 +306,21 @@ Still to check, then delete this section:
   Bitebook's. Still to see: does the 11:45 pm automation run on its own?
 
 - **Question notifications:** when a run asks something, does the notification arrive, and
-  does it open the meal? Is the "Waiting for your answer" card on Today easy to spot?
-- **The API path trial:** turn it on in ⚙︎ Settings → Automatic analysis. Do estimates arrive
+  does it open the meal? Is the "Waiting for your answer" card on Meals easy to spot?
+- **The API path trial:** turn it on in avatar → Settings → Automatic analysis. Do estimates arrive
   a minute or so after saving? Are they as good as the chat's? Do questions and "Correct
   this" (typed and spoken) feel natural? What does Memory say it costs per day?
 
-- **Reminders:** turn them on from the card on Today (home-screen app only), then
-  ⚙︎ Settings → Reminders → "Send a test". Does it arrive, and does tapping it open
-  Timeline? Does the 10:30 pm one arrive on time?
-- **A missed meal:** Timeline → "Add a meal I missed", record a note, save. Does the
+- **Reminders:** turn them on from the card on Meals (home-screen app only), then
+  avatar → Settings → Reminders → "Send a test". Does it arrive, and does tapping it open
+  Meals? Does the 10:30 pm one arrive on time?
+- **A missed meal:** Meals → "Add a meal I missed", record a note, save. Does the
   reply estimate it sensibly from the words alone?
 
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
   should be saved, with a note saying so.
+- **Meals and the avatar (D37):** is one Meals tab comfortable to scroll, with today on
+  top and earlier days below? Is the avatar menu easy to find for Trends and Settings?
 - **Slow uploads:** the watchdog (D32) caught the hangs but retries hung too, every one with
   0 bytes sent, until a relaunch; meals still on the phone showed "?" thumbnails. Both point
   at Blobs read back from IndexedDB going unreadable, so the outbox now keeps bytes (D36).
@@ -375,13 +377,13 @@ easy enough for family members.
 
 ## 10. Screens
 
-> **Tier:** Plan · **Verified:** 2026-10-25 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-28 · **Expires:** 2027-01-28
 
-Built (`src/app/`): tabs Today (capture, questions waiting, running total, chat-waiting
-card), Timeline, Trends (daily charts, latest comment) and Memory; screens Meal detail
-(analyses, questions, corrections), Analyze (the chat handoff, reached from Today and
-Trends) and Settings (the ⚙︎ in the header). See D29, D30. Ideas for later: storage usage
-in Settings, daily targets for the running total.
+Built (`src/app/`): tabs Meals (capture, questions waiting, running total, chat-waiting
+card, today's meals, then earlier days) and Memory; the avatar in the header opens Trends
+(daily charts, latest comment) and Settings; screens Meal detail (analyses, questions,
+corrections) and Analyze (the chat handoff, reached from Meals and Trends). See D29, D30,
+D37. Ideas for later: storage usage in Settings, daily targets for the running total.
 
 ## 11. Build order
 

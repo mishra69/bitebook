@@ -3,17 +3,16 @@ import type { DeletedMeal, Meal } from "../shared/meals";
 import { MealRow } from "./MealRow";
 import { onMealsChanged } from "./lib/notify";
 import { restoreSavedMeal } from "./lib/mealsApi";
-import { listMeals, subscribe, type OutboxMeal } from "./lib/outbox";
-import { timeOfDay } from "./lib/time";
+import { startOfToday, timeOfDay } from "./lib/time";
 
 const PAGE = 40;
 
-// Every saved meal, newest first, grouped by the day it was eaten (in the zone it was
-// eaten in). Meals still on the phone are listed first.
-export function Timeline({ userId }: { userId: string }) {
+// Below today on the Meals tab (D37): every earlier meal, newest first, grouped by the day
+// it was eaten (in the zone it was eaten in). Today and meals still on the phone are
+// MealList's.
+export function EarlierDays() {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [next, setNext] = useState<number | null | undefined>(undefined); // undefined: not loaded yet
-  const [local, setLocal] = useState<OutboxMeal[]>([]);
   const [error, setError] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deletedVersion, setDeletedVersion] = useState(0);
@@ -33,34 +32,17 @@ export function Timeline({ userId }: { userId: string }) {
 
   useEffect(() => {
     load(null, true);
-    listMeals(userId).then(setLocal);
-    const offSync = subscribe(() => listMeals(userId).then(setLocal));
-    const offChanged = onMealsChanged(() => {
+    return onMealsChanged(() => {
       load(null, true);
       setDeletedVersion((v) => v + 1);
     });
-    return () => {
-      offSync();
-      offChanged();
-    };
-  }, [userId]);
+  }, []);
 
-  const days = groupByDay(meals);
+  const today = startOfToday();
+  const days = groupByDay(meals.filter((m) => Date.parse(m.taken_at) < today));
   return (
-    <section class="timeline" aria-label="Timeline">
-      <a class="button wide missed-link" href="#/missed">＋ Add a meal I missed</a>
-      {local.length > 0 && (
-        <>
-          <h2 class="section-title">Not uploaded yet</h2>
-          <ul class="meals">
-            {local.map((meal) => (
-              <MealRow key={meal.id} row={{ kind: "local", meal }} />
-            ))}
-          </ul>
-        </>
-      )}
-      {error && <p class="bad">Couldn't load meals. Are you online?</p>}
-      {next !== undefined && meals.length === 0 && local.length === 0 && <p class="muted">No meals yet.</p>}
+    <section class="timeline" aria-label="Earlier meals">
+      {error && <p class="bad">Couldn't load earlier meals. Are you online?</p>}
       {days.map(([day, list]) => (
         <div key={day}>
           <h2 class="section-title">{dayLabel(day)}</h2>

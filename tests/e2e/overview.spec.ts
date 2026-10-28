@@ -20,7 +20,7 @@ test.afterAll(async ({ request }) => {
   for (const id of created) await request.delete(`/api/meals/${id}`);
 });
 
-test("in chat mode, Today points to the meals waiting for a handoff", async ({ page, request }) => {
+test("in chat mode, Meals points to the meals waiting for a handoff", async ({ page, request }) => {
   await openApp(page);
   created.push(await seedMeal(request, await todayAt(page, 0), "chat waiting"));
   await page.reload();
@@ -28,7 +28,8 @@ test("in chat mode, Today points to the meals waiting for a handoff", async ({ p
   await expect(card).toContainText(/\d+ meals? waiting for analysis → Analyze in a chat/);
   await card.click();
   await expect(page.locator(".analyze")).toBeVisible();
-  await expect(page.locator(".tabs a[aria-current=page]")).toHaveText("Trends");
+  await page.getByRole("button", { name: "← Back" }).click();
+  await expect(page.locator(".chat-waiting")).toBeVisible();
 });
 
 test("with automatic analysis, Today shows the running total and the model's question", async ({ page, request }) => {
@@ -54,7 +55,13 @@ test("with automatic analysis, Today shows the running total and the model's que
 });
 
 test("Trends charts a nutrient per day, shows the latest comment, and links to the chat handoff", async ({ page }) => {
-  await openApp(page, "#/trends");
+  // Trends and Settings are behind the avatar, out of the tab bar (D37).
+  await openApp(page);
+  await expect(page.locator(".tabs a")).toHaveText(["Meals", "Memory"]);
+  await page.getByRole("button", { name: "Account" }).click();
+  await expect(page.getByRole("menuitem")).toHaveText(["Trends", "Settings"]);
+  await page.getByRole("menuitem", { name: "Trends" }).click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(page.locator(".chart .bar")).not.toHaveCount(0);
   await expect(page.locator(".readout")).toContainText(/kcal a day on average, over \d+ fully analyzed days?/);
   await page.getByRole("radio", { name: "protein" }).click();

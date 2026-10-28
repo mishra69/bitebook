@@ -3,7 +3,7 @@ import { ReminderSettings } from "./Reminders";
 import { AppleHealth } from "./AppleHealth";
 
 // Everything about how the app behaves for you, as opposed to what it knows about you
-// (Memory). Reached from the gear in the header.
+// (Memory). Reached from the avatar menu in the header (D37).
 export function Settings({ email, onSignOut }: { email: string; onSignOut: () => void }) {
   return (
     <section class="settings" aria-label="Settings">
