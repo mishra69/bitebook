@@ -88,7 +88,7 @@ describe each helping before saving. The server transcribes it with Whisper (Wor
 AI), and the prompt carries the transcript. The transcript isn't editable: if it's often
 wrong, the fix is a better transcriber, not hand-editing (D21).
 
-**A meal missed.** On Meals, "Add a meal I missed" opens a draft without a photo:
+**A meal missed.** "＋ Missed meal", next to New meal, opens a draft without a photo:
 pick the day (today or yesterday) and the meal type, and describe it in a voice note or
 a note. It gets that meal type's usual hour, and the prompt tells the model it's a
 description only (D24).
@@ -314,7 +314,7 @@ Still to check, then delete this section:
 - **Reminders:** turn them on from the card on Meals (home-screen app only), then
   avatar → Settings → Reminders → "Send a test". Does it arrive, and does tapping it open
   Meals? Does the 10:30 pm one arrive on time?
-- **A missed meal:** Meals → "Add a meal I missed", record a note, save. Does the
+- **A missed meal:** "＋ Missed meal" (next to New meal), record a note, save. Does the
   reply estimate it sensibly from the words alone?
 
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
@@ -380,7 +380,8 @@ easy enough for family members.
 > **Tier:** Plan · **Verified:** 2026-10-28 · **Expires:** 2027-01-28
 
 Built (`src/app/`): tabs Meals (capture, questions waiting, running total, chat-waiting
-card, today's meals, then earlier days) and Memory; the avatar in the header opens Trends
+card, today's meals, then earlier days; New meal and Missed meal in the bottom bar) and
+Memory; the avatar in the header opens Trends
 (daily charts, latest comment) and Settings; screens Meal detail (analyses, questions,
 corrections) and Analyze (the chat handoff, reached from Meals and Trends). See D29, D30,
 D37. Ideas for later: storage usage in Settings, daily targets for the running total.

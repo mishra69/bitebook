@@ -129,7 +129,8 @@ ul { margin: 0; padding-left: 1.2rem; }
 }
 .bottom-bar button { flex: 1; max-width: 16rem; min-height: 3rem; border-radius: 12px; font: inherit; font-weight: 600; border: 0; }
 .bottom-bar .primary { background: var(--fg); color: var(--bg); }
-.bottom-bar .primary.big { min-height: 3.5rem; font-size: 1.1rem; }
+.bottom-bar .big { min-height: 3.5rem; font-size: 1.1rem; }
+.bottom-bar .missed { flex: 0.7; }
 .bottom-bar .secondary { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1px var(--muted); }
 .bottom-bar button:disabled { opacity: 0.6; }
 .push { margin-left: auto; }
@@ -139,7 +140,6 @@ ul { margin: 0; padding-left: 1.2rem; }
 .thumb.no-photo { display: grid; place-items: center; font-size: 1.6rem; border: 1px dashed var(--muted); background: none; }
 .thumb.no-photo.small { font-size: 1.1rem; }
 .missed-intro { margin: 0; }
-.missed-link { text-align: center; margin-top: 0; }
 .reminder-offer p { margin: 0; }
 .reminders p { margin: 0.25rem 0; }
 .meals.deleted { margin-top: 0.5rem; }

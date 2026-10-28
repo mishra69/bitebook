@@ -81,27 +81,36 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
     noteTimer.current = setTimeout(() => latest.current && setDraft(latest.current), 400);
   };
 
-  // Opened as #/missed (from Meals): start a meal without a photo, unless one is
-  // already being composed. The hash goes back to #/ so a reload doesn't start another.
+  // A meal without a photo (D24), unless one is already being composed.
+  const startMissed = async () => {
+    if (await getDraft(userId)) return;
+    await setDraft({
+      id: ulid(),
+      userId,
+      takenAt: missedMealTime(0, null),
+      tz: deviceTz(),
+      mealType: null,
+      note: null,
+      photos: [],
+      createdAt: new Date().toISOString(),
+      draft: true,
+      missed: { daysAgo: 0 },
+    });
+  };
+
+  // Opened as #/missed (an older link): the hash goes back to #/ so a reload doesn't
+  // start another.
   useEffect(() => {
     if (!missed) return;
     history.replaceState(null, "", "#/");
-    (async () => {
-      if (await getDraft(userId)) return;
-      await setDraft({
-        id: ulid(),
-        userId,
-        takenAt: missedMealTime(0, null),
-        tz: deviceTz(),
-        mealType: null,
-        note: null,
-        photos: [],
-        createdAt: new Date().toISOString(),
-        draft: true,
-        missed: { daysAgo: 0 },
-      });
-    })();
+    startMissed();
   }, [missed, userId]);
+
+  // The form opens at the top of Meals: bring it into view, wherever the page was scrolled.
+  const form = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (draft) form.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [draft?.id]);
 
   // A missed meal's time follows its day and meal type.
   const setMissed = (daysAgo: number, mealType: MealType | null) =>
@@ -216,7 +225,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
         onChange={(e) => onFiles((e.target as HTMLInputElement).files)}
       />
       {draft && (
-        <section class="card draft" aria-label="New meal">
+        <section ref={form} class="card draft" aria-label="New meal">
           {draft.missed && (
             <>
               <p class="missed-intro">
@@ -295,7 +304,10 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
             <button class="primary" onClick={save} disabled={missedIncomplete}>Save meal</button>
           </>
         ) : (
-          <button class="primary big" onClick={openCamera}>New meal</button>
+          <>
+            <button class="secondary big missed" onClick={startMissed}>＋ Missed meal</button>
+            <button class="primary big" onClick={openCamera}>New meal</button>
+          </>
         )}
       </div>
     </>

@@ -254,8 +254,11 @@ test("a voice note can be removed from the draft, and over-long ones are refused
 test("a missed meal is added from Meals with a voice note and no photo, and goes into the next prompt", async ({ page, request }) => {
   await openApp(page, "#/timeline"); // an old link: Timeline is part of Meals now (D37)
   await expect(page.locator(".tabs a[aria-current=page]")).toHaveText("Meals");
-  await page.getByRole("link", { name: "＋ Add a meal I missed" }).click();
+  // Next to New meal, from anywhere on the page; the form opens at the top and comes into view.
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.getByRole("button", { name: "＋ Missed meal" }).click();
   await expect(page.locator(".draft .missed-intro")).toContainText("A meal you missed");
+  await expect(page.locator(".draft")).toBeInViewport();
   await expect(page.locator(".draft figure.thumb")).toHaveCount(0);
   const save = page.getByRole("button", { name: "Save meal" });
   await expect(save).toBeDisabled(); // needs a meal type and a description

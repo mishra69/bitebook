@@ -586,3 +586,9 @@ bar.
 - A missed meal for yesterday now appears under yesterday as soon as it uploads.
 - The Apple Health Shortcut keeps its "if fiber" check: an estimate may still leave fiber
   unknown, and a sample without a value would stop the night's run before it confirms.
+
+## D38 · 2026-10-28 · Missed meal sits next to New meal
+
+D37 put "Add a meal I missed" under today's meals: hard to find, and its form opened at the
+top of the page, out of sight. It's now "＋ Missed meal" in the bottom bar beside New meal,
+and whichever form opens is scrolled into view.

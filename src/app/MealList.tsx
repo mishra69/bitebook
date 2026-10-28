@@ -80,7 +80,6 @@ export function MealList({ userId }: { userId: string }) {
           <MealRow key={r.meal.id} row={r} />
         ))}
       </ul>
-      <a class="button secondary wide missed-link" href="#/missed">＋ Add a meal I missed</a>
     </section>
   );
 }
