@@ -39,6 +39,7 @@ export type Meal = {
   note: string | null;
   photos: { id: string; position: number; width: number | null; height: number | null; taken_at: string }[];
   voice?: VoiceNote | null;
+  has_voice?: boolean; // whether there's a voice note (in lists; its text is on the detail screen)
   analysis?: Analysis | null; // the latest non-skipped one, in lists
   analyses?: Analysis[]; // every one, newest first, on the detail screen
   api?: ApiState; // the API path's latest run and open questions (D28)

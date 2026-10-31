@@ -319,7 +319,7 @@ test("Say it logs a meal by voice alone, stepped back to yesterday, and it goes 
   expect(meal.taken_at.slice(0, 16)).toBe(`${ymd(yesterday)}T20:47`);
 
   // Listed under yesterday, without a reload.
-  await expect(page.locator(".timeline .meal", { hasText: "missed lunch" }).locator(".no-photo")).toHaveCount(1);
+  await expect(page.locator(".timeline .meal", { hasText: "missed lunch" }).getByLabel("Voice note, no photo")).toHaveCount(1);
   for (const b of (await (await request.get("/api/batches?status=open")).json()).batches) await request.post(`/api/batches/${b.id}/abandon`);
   const res = await request.post("/api/batches", { data: { meal_ids: [meal.id] } });
   expect(res.status()).toBe(201);

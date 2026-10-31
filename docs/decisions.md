@@ -660,3 +660,12 @@ so 20 minutes was offered; the user chose to keep the hour for now and revisit l
 audio player first asks for `bytes=0-1` and may refuse to play from a server that ignores
 it, so the endpoint now answers Range requests with 206 and `Content-Range` (R2 reads just
 that range). Every voice note so far (34) is stored in R2 with its transcript.
+
+## D44 · 2026-10-31 · The no-photo tile tells voice from text
+
+A meal without a photo showed a mic tile whether or not it had a voice note, so a meal
+described only in text (here, almost certainly iPhone keyboard dictation into the note:
+the phone logged `voice: false`, and the text sat in `meals.note`) looked like a voice note
+without its player. Meal lists now carry `has_voice`, and the tile is a mic only for a
+voice note, otherwise a page. Text dictated with the keyboard is a note: no audio, no
+transcript.

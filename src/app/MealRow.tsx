@@ -1,4 +1,4 @@
-import { MicIcon } from "./Icons";
+import { MicIcon, NoteIcon } from "./Icons";
 import { useEffect, useMemo } from "preact/hooks";
 import type { Meal } from "../shared/meals";
 import { retryMeal, removeFromOutbox, type OutboxMeal } from "./lib/outbox";
@@ -10,9 +10,11 @@ export type Row = { kind: "server"; meal: Meal } | { kind: "local"; meal: Outbox
 export const rowTakenAt = (r: Row) => (r.kind === "local" ? r.meal.takenAt : r.meal.taken_at);
 
 // Stands in for the photo of a meal added afterwards from a description (D24).
-export const NoPhoto = ({ small }: { small?: boolean }) => (
-  <span class={"thumb no-photo" + (small ? " small" : "")} title="Added without a photo" aria-label="No photo">
-    <MicIcon />
+// In place of a photo: a mic when the meal was described in a voice note, a page when only
+// in a written note (or keyboard dictation, which arrives as text).
+export const NoPhoto = ({ small, voice }: { small?: boolean; voice: boolean }) => (
+  <span class={"thumb no-photo" + (small ? " small" : "")} title={voice ? "Voice note, no photo" : "Written note, no photo"} aria-label={voice ? "Voice note, no photo" : "Written note, no photo"}>
+    {voice ? <MicIcon /> : <NoteIcon />}
   </span>
 );
 
@@ -62,7 +64,7 @@ export function MealRow({ row }: { row: Row }) {
         {urls.map((u) => (
           <img key={u} class="thumb" src={u} alt="" loading="lazy" />
         ))}
-        {urls.length === 0 && <NoPhoto />}
+        {urls.length === 0 && <NoPhoto voice={row.kind === "local" ? !!row.meal.voice : !!row.meal.has_voice} />}
       </div>
       {row.kind === "server" && row.meal.analysis && (
         <p class="meal-analysis">

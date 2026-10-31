@@ -16,3 +16,11 @@ export const CameraIcon = () => (
     <circle cx="12" cy="13" r="3.5" />
   </svg>
 );
+
+// A written note: a page with lines.
+export const NoteIcon = () => (
+  <svg {...svg}>
+    <path d="M6 3.5h9l3.5 3.5v13.5H6Z" />
+    <path d="M9 11h6M9 14.5h6M9 18h3.5" />
+  </svg>
+);

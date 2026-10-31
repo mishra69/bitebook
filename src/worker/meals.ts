@@ -241,9 +241,14 @@ export async function attachPhotos(db: D1Database, userId: string, rows: Omit<Me
     )
     .bind(userId, JSON.stringify(rows.map((r) => r.id)))
     .all<Meal["photos"][number] & { meal_id: string }>();
+  const { results: voiced } = await db
+    .prepare("SELECT meal_id FROM voice_notes WHERE user_id = ?1 AND meal_id IN (SELECT value FROM json_each(?2))")
+    .bind(userId, JSON.stringify(rows.map((r) => r.id)))
+    .all<{ meal_id: string }>();
+  const hasVoice = new Set(voiced.map((v) => v.meal_id));
   const byMeal = new Map<string, Meal["photos"]>();
   for (const { meal_id, ...p } of photos) byMeal.set(meal_id, [...(byMeal.get(meal_id) ?? []), p]);
-  return rows.map((r) => ({ ...r, photos: byMeal.get(r.id) ?? [] }));
+  return rows.map((r) => ({ ...r, photos: byMeal.get(r.id) ?? [], has_voice: hasVoice.has(r.id) }));
 }
 
 // DELETE /api/meals/:id — hides the meal everywhere at once. It can be restored for

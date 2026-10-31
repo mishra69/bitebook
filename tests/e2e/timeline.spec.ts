@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openApp, seedMeal } from "./helpers";
+import { openApp, seedMeal, ulid } from "./helpers";
 
 test("earlier days are rows with totals that open to their meals, and older days load on scroll", async ({ page, request }) => {
   test.setTimeout(150_000);
@@ -55,6 +55,16 @@ test("earlier days are rows with totals that open to their meals, and older days
   await expect(page.locator(".meal", { hasText: "day 1" })).toHaveCount(0);
   await page.locator(".toast").getByRole("button", { name: "Undo" }).click();
   await expect(row("Fri, Oct 9")).toHaveCount(1);
+});
+
+test("a meal without a photo shows a mic only if it has a voice note", async ({ page, request }) => {
+  // Text only, as keyboard dictation into the note leaves it: a page, not a mic.
+  const id = ulid();
+  expect((await request.post("/api/meals", { data: { id, taken_at: "2026-10-12T08:30:00-05:00", tz: "America/Chicago", meal_type: null, note: "dictated shake", photos: [] } })).status()).toBe(201);
+  await openApp(page);
+  const day = page.locator("li.day", { has: page.locator(".day-title strong", { hasText: "Mon, Oct 12" }) });
+  await expect(day.locator(".meal", { hasText: "dictated shake" }).getByLabel("Written note, no photo")).toHaveCount(1);
+  await request.delete(`/api/meals/${id}`);
 });
 
 test("a deleted meal can be restored from Recently deleted", async ({ page, request }) => {
