@@ -260,7 +260,7 @@ test("Say it logs a meal by voice alone, stepped back to yesterday, and it goes 
   await page.clock.install({ time: now });
   await page.clock.resume(); // and running from there, so the voice note has a length
   await openApp(page, "#/timeline"); // an old link: Timeline is part of Meals now (D37)
-  await expect(page.locator(".tabs a[aria-current=page]")).toHaveText("Meals");
+  await expect(page.getByRole("region", { name: "Today's meals" })).toBeVisible();
   // Next to New meal, from anywhere on the page; the form opens at the top and comes into view.
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   // "Say it" opens a meal without a photo and starts recording at once (D40).

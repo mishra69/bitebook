@@ -138,7 +138,7 @@ rows and files for good.
 
 ## 4. Data model (D1)
 
-> **Tier:** Contract · **Verified:** 2026-10-27 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-10-31 · **Expires:** 2027-04-30
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
@@ -147,7 +147,7 @@ rows and files for good.
 > `diag_events` (0012, the phone's upload log, D23), `push_subscriptions` and
 > `reminders_sent` (0013, D25), the API path's `users.api_model`, batch cost columns,
 > open questions and `analysis_jobs` (0014, D28), `batches.request_params` (0015, D33),
-> `health_keys`, `health_runs` and `health_exports` (0016, D34).
+> `health_keys`, `health_runs` and `health_exports` (0016, D34); `users.picture_url` (0017, D41).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -323,7 +323,8 @@ Still to check, then delete this section:
   should be saved, with a note saying so.
 - **Meals and the avatar (D37, D39):** is one Meals tab comfortable to scroll, with today
   on top and earlier days as rows below? Do the right days start open (yesterday, and any
-  day still being analyzed)? Is the missed-meal time stepper quick enough? Is the avatar menu easy to find for Trends and Settings?
+  day still being analyzed)? Is the missed-meal time stepper quick enough? After signing
+  out and in once, does the avatar show the Google photo? Is the avatar menu easy to find for Trends and Settings?
 - **Slow uploads:** the watchdog (D32) caught the hangs but retries hung too, every one with
   0 bytes sent, until a relaunch; meals still on the phone showed "?" thumbnails. Both point
   at Blobs read back from IndexedDB going unreadable, so the outbox now keeps bytes (D36).
@@ -382,13 +383,15 @@ easy enough for family members.
 
 > **Tier:** Plan · **Verified:** 2026-10-31 · **Expires:** 2027-01-31
 
-Built (`src/app/`): tabs Meals (capture, questions waiting, running total, chat-waiting
-card, today's meals, then earlier days as one row per day with its totals, opening to
-its meals and loading older days on scroll; Say it and Snap it in the bottom bar)
-and Memory; the avatar in the header opens Trends
-(daily charts, latest comment) and Settings; screens Meal detail (analyses, questions,
-corrections) and Analyze (the chat handoff, reached from Meals and Trends). See D29, D30,
-D37, D39. Ideas for later: storage usage in Settings, daily targets for the running total.
+Built (`src/app/`): no tabs. The home screen is Meals (capture, questions waiting,
+running total, chat-waiting card, today's meals, then earlier days as one row per day with
+its totals, opening to its meals and loading older days on scroll; Say it and Snap it in
+the bottom bar). The avatar in the header (the Google profile photo, else the email's
+initial) opens Trends (daily charts, latest comment), Memory and Settings, each with
+"← Meals"; tapping "Bitebook" also goes home. Other screens: Meal detail (analyses,
+questions, corrections) and Analyze (the chat handoff, reached from Meals and Trends).
+See D29, D30, D37, D39, D41. Ideas for later: storage usage in Settings, daily targets for
+the running total.
 
 ## 11. Build order
 

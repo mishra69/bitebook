@@ -9,7 +9,7 @@ export async function openApp(page: Page, hash = "#/") {
   await page.goto("/" + hash);
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
-  await expect(page.locator(".tabs")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Account" })).toBeVisible();
 }
 
 // Takes photos through the real capture flow and saves the meal.

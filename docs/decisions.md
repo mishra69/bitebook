@@ -628,3 +628,15 @@ now, so it becomes the voice button:
   the prompt can appear right as Say it is tapped. Accepted for now; the fallback is a big
   record button instead of auto-start.
 - **"Again" chips** for routine meals are parked (SPEC §11).
+
+## D41 · 2026-10-31 · No tabs; Memory joins the avatar; the avatar shows the Google photo
+
+Supersedes D37's two tabs. Meals is the app; Memory is visited now and then, like Trends
+and Settings. So the tab bar goes, and the avatar menu holds Trends, Memory and
+Settings, each with "← Meals" (tapping "Bitebook" also goes home).
+
+The avatar shows the Google profile photo: the ID token's `picture` claim, saved on each
+sign-in (`users.picture_url`, migration 0017; https only) and returned by `/api/health`.
+It's loaded straight from Google without a referrer. When there's no photo, or it doesn't
+load (offline, a stale URL), the email's initial shows instead. Existing sessions get the
+photo at their next sign-in.

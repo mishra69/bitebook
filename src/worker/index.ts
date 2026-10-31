@@ -24,12 +24,13 @@ api.use("*", requireUser);
 
 api.get("/health", async (c) => {
   const [db, photos] = await Promise.allSettled([
-    c.env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>(),
+    c.env.DB.prepare("SELECT 1 AS ok, (SELECT picture_url FROM users WHERE id = ?1) AS picture").bind(c.get("user").id).first<{ ok: number; picture: string | null }>(),
     c.env.PHOTOS.list({ prefix: `users/${c.get("user").id}/`, limit: 1 }),
   ]);
   return c.json({
     user: c.get("user").email,
     userId: c.get("user").id,
+    picture: db.status === "fulfilled" ? (db.value?.picture ?? null) : null,
     d1: db.status === "fulfilled" && db.value?.ok === 1 ? "ok" : "error",
     r2: photos.status === "fulfilled" ? "ok" : "error",
   });

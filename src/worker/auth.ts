@@ -72,12 +72,14 @@ auth.post("/google", async (c) => {
   if (!allowed(c.env, email)) return c.json({ error: "not_allowed" }, 403);
 
   const now = new Date().toISOString();
+  // The profile photo, for the avatar (D41): Google's own https URL, or none.
+  const picture = typeof claims.picture === "string" && claims.picture.startsWith("https://") && claims.picture.length < 1000 ? claims.picture : null;
   const user = await c.env.DB.prepare(
-    `INSERT INTO users (id, google_sub, email, created_at, last_login_at) VALUES (?1, ?2, ?3, ?4, ?4)
-     ON CONFLICT(google_sub) DO UPDATE SET email = ?3, last_login_at = ?4
+    `INSERT INTO users (id, google_sub, email, created_at, last_login_at, picture_url) VALUES (?1, ?2, ?3, ?4, ?4, ?5)
+     ON CONFLICT(google_sub) DO UPDATE SET email = ?3, last_login_at = ?4, picture_url = ?5
      RETURNING id`,
   )
-    .bind(ulid(), claims.sub, email, now)
+    .bind(ulid(), claims.sub, email, now, picture)
     .first<{ id: string }>();
   if (!user) return c.json({ error: "sign_in_failed" }, 500);
 

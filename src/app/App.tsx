@@ -16,12 +16,12 @@ import { refreshReminders } from "./lib/reminders";
 import { useRoute } from "./lib/router";
 import { liveVersion, versionLabel } from "./version";
 
-type Health = { user: string; userId: string; d1: string; r2: string } | { error: string };
+type Health = { user: string; userId: string; picture: string | null; d1: string; r2: string } | { error: string };
 
 // The signed-in user is remembered on the device so the app (and its outbox) still
 // works when it's opened offline.
 const USER_KEY = "bitebook.user";
-type User = { id: string; email: string };
+type User = { id: string; email: string; picture?: string | null };
 const rememberedUser = (): User | null => {
   try {
     return JSON.parse(localStorage.getItem(USER_KEY) ?? "null");
@@ -44,7 +44,7 @@ export function App() {
       h = { error: "offline" };
     }
     if ("userId" in h) {
-      const u = { id: h.userId, email: h.user };
+      const u = { id: h.userId, email: h.user, picture: h.picture };
       try {
         localStorage.setItem(USER_KEY, JSON.stringify(u));
       } catch {
@@ -96,8 +96,10 @@ export function App() {
   return (
     <main class="screen">
       <header class="app-header">
-        <h1>Bitebook</h1>
-        {user && <AccountMenu email={user.email} active={route.name === "settings" || route.name === "trends"} />}
+        <h1>
+          <a class="home" href="#/">Bitebook</a>
+        </h1>
+        {user && <AccountMenu email={user.email} picture={user.picture ?? null} active={MENU_ROUTES.includes(route.name)} />}
       </header>
       {authState === "checking" && !user && <p class="muted">Loading…</p>}
       {authState === "error" && <p class="bad">The server isn't responding properly. Try again in a bit.</p>}
@@ -105,10 +107,11 @@ export function App() {
       {!user && authState === "offline" && <p class="muted">You're offline. Sign in once you're back online.</p>}
       {user && (
         <>
-          <nav class="tabs" aria-label="Sections">
-            <a href="#/" aria-current={route.name === "meals" || route.name === "meal" ? "page" : undefined}>Meals</a>
-            <a href="#/memory" aria-current={route.name === "memory" ? "page" : undefined}>Memory</a>
-          </nav>
+          {MENU_ROUTES.includes(route.name) && (
+            <a class="link back" href="#/">
+              ← Meals
+            </a>
+          )}
           {route.name === "meals" && (
             <>
               <Capture userId={user.id} missed={route.missed} />
@@ -131,10 +134,14 @@ export function App() {
   );
 }
 
-// The avatar (D37): the less-used screens, out of the tab bar. Apple Health draws the
-// long-term charts for most people; Trends stays for those without the Shortcut.
-function AccountMenu({ email, active }: { email: string; active: boolean }) {
+// The screens behind the avatar (D37, D41): Meals is the app; these are visited now and then.
+// Apple Health draws the long-term charts for most people; Trends stays for those without
+// the Shortcut.
+const MENU_ROUTES: string[] = ["trends", "memory", "settings"];
+
+function AccountMenu({ email, picture, active }: { email: string; picture: string | null; active: boolean }) {
   const [open, setOpen] = useState(false);
+  const [broken, setBroken] = useState(false); // offline, or the photo's URL went stale
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -157,12 +164,17 @@ function AccountMenu({ email, active }: { email: string; active: boolean }) {
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        {email.charAt(0).toUpperCase()}
+        {picture && !broken ? (
+          <img class="avatar-img" src={picture} alt="" referrerpolicy="no-referrer" onError={() => setBroken(true)} />
+        ) : (
+          email.charAt(0).toUpperCase()
+        )}
       </button>
       {open && (
         <div class="account-menu" role="menu">
           <p class="muted small">{email}</p>
           <a role="menuitem" href="#/trends">Trends</a>
+          <a role="menuitem" href="#/memory">Memory</a>
           <a role="menuitem" href="#/settings">Settings</a>
         </div>
       )}
