@@ -653,3 +653,10 @@ as invalid JSON.
 The same day a late-saved meal reached Health a night late: its estimate was 41 minutes
 old at the 11:45 pm run, under D34's hour. Every revision so far came within 5 minutes,
 so 20 minutes was offered; the user chose to keep the hour for now and revisit later.
+
+## D43 · 2026-10-31 · Voice audio answers Range requests
+
+`GET /api/meals/:id/voice` returned the whole file to every request. iPhone Safari's
+audio player first asks for `bytes=0-1` and may refuse to play from a server that ignores
+it, so the endpoint now answers Range requests with 206 and `Content-Range` (R2 reads just
+that range). Every voice note so far (34) is stored in R2 with its transcript.

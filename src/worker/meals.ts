@@ -173,14 +173,26 @@ meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
   return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [], voice, api: api.get(meal.id) } });
 });
 
-// GET /api/meals/:id/voice — the voice note's audio, for playback.
+// GET /api/meals/:id/voice — the voice note's audio, for playback. Answers Range requests:
+// iPhone Safari asks for bytes=0-1 first and won't play audio from a server that ignores it.
 meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}/voice", async (c) => {
   const row = await c.env.DB.prepare("SELECT r2_key, mime FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2")
     .bind(c.req.param("id"), c.get("user").id)
     .first<{ r2_key: string; mime: string }>();
-  const obj = row && (await c.env.PHOTOS.get(row.r2_key));
+  const ranged = !!row && /^bytes=\d*-\d*$/.test(c.req.header("Range") ?? "");
+  const obj = row && (await c.env.PHOTOS.get(row.r2_key, ranged ? { range: c.req.raw.headers } : undefined));
   if (!obj) return c.json({ error: "not_found" }, 404);
-  return new Response(obj.body, { headers: { "Content-Type": row.mime, "Cache-Control": "private, max-age=31536000, immutable" } });
+  const headers = new Headers({ "Content-Type": row.mime, "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=31536000, immutable" });
+  const r = obj.range as { offset?: number; length?: number } | undefined;
+  if (ranged && r) {
+    const offset = r.offset ?? 0;
+    const length = r.length ?? obj.size - offset;
+    headers.set("Content-Range", `bytes ${offset}-${offset + length - 1}/${obj.size}`);
+    headers.set("Content-Length", String(length));
+    return new Response(obj.body, { status: 206, headers });
+  }
+  headers.set("Content-Length", String(obj.size));
+  return new Response(obj.body, { headers });
 });
 
 // Analyses per meal, newest first. latestOnly keeps just the newest non-skipped one.

@@ -223,6 +223,15 @@ test("a voice note is recorded into the draft, survives a reload, uploads, and i
   const audio = await request.get(`/api/meals/${saved.id}/voice`);
   expect(audio.status()).toBe(200);
   expect(audio.headers()["content-type"]).toMatch(/^audio\//);
+  const size = (await audio.body()).length;
+  // iPhone Safari plays audio only from a server that answers Range requests.
+  const first = await request.get(`/api/meals/${saved.id}/voice`, { headers: { Range: "bytes=0-1" } });
+  expect(first.status()).toBe(206);
+  expect(first.headers()["content-range"]).toBe(`bytes 0-1/${size}`);
+  expect((await first.body()).length).toBe(2);
+  const rest = await request.get(`/api/meals/${saved.id}/voice`, { headers: { Range: "bytes=2-" } });
+  expect(rest.status()).toBe(206);
+  expect((await rest.body()).length).toBe(size - 2);
 
   await page.goto(`/#/meal/${saved.id}`);
   await expect(page.locator(".voice-detail")).toContainText("(test transcript of");
