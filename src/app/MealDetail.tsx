@@ -43,7 +43,7 @@ export function MealDetail({ id }: { id: string }) {
         {meal.meal_type && <span class="chip on small">{meal.meal_type}</span>}
         <span class="muted small"> {meal.tz}</span>
       </p>
-      {meal.photos.length === 0 && <p class="muted small">Added afterwards without a photo; the time is the meal's usual hour.</p>}
+      {meal.photos.length === 0 && <p class="muted small">Added without a photo, by voice or a note; the time is approximate.</p>}
       <div class="detail-photos">
         {meal.photos.map((p) => (
           <img key={p.id} src={`/api/photos/${p.id}/display`} alt="" width={p.width ?? undefined} height={p.height ?? undefined} />
