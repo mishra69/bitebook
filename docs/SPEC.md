@@ -390,6 +390,7 @@ the bottom bar). The avatar in the header (the Google profile photo, else the em
 initial) opens Trends (daily charts, latest comment), Memory and Settings, each with
 "← Meals"; tapping "Bitebook" also goes home. Other screens: Meal detail (analyses,
 questions, corrections) and Analyze (the chat handoff, reached from Meals and Trends).
+Signed out, the screen is just the icon, the name and the Google button, centered.
 See D29, D30, D37, D39, D41. Ideas for later: storage usage in Settings, daily targets for
 the running total.
 

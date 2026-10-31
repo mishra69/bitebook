@@ -95,12 +95,14 @@ export function App() {
 
   return (
     <main class="screen">
-      <header class="app-header">
-        <h1>
-          <a class="home" href="#/">Bitebook</a>
-        </h1>
-        {user && <AccountMenu email={user.email} picture={user.picture ?? null} active={MENU_ROUTES.includes(route.name)} />}
-      </header>
+      {(user || authState !== "signed_out") && (
+        <header class="app-header">
+          <h1>
+            <a class="home" href="#/">Bitebook</a>
+          </h1>
+          {user && <AccountMenu email={user.email} picture={user.picture ?? null} active={MENU_ROUTES.includes(route.name)} />}
+        </header>
+      )}
       {authState === "checking" && !user && <p class="muted">Loading…</p>}
       {authState === "error" && <p class="bad">The server isn't responding properly. Try again in a bit.</p>}
       {!user && authState === "signed_out" && <GoogleSignIn onSignedIn={checkSession} />}

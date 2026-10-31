@@ -35,11 +35,17 @@ export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
   }, []);
 
   return (
-    <section class="card">
-      <h2>Sign in</h2>
-      {status && <p>{status}</p>}
-      <div ref={button} />
-      {error && <p class="bad">Sign-in failed: {error}</p>}
+    <section class="signin" aria-label="Sign in">
+      <img class="signin-icon" src="/icons/icon-192.png" alt="" width="88" height="88" />
+      <h1>Bitebook</h1>
+      <p class="muted">Snap or say what you eat. The estimates follow.</p>
+      <div class="signin-button" ref={button} />
+      {status && <p class="muted small">{status}</p>}
+      {error && (
+        <p class="bad">
+          {error === "not_allowed" ? "This Google account isn't on Bitebook's list yet. Ask whoever runs it to add you." : `Sign-in failed: ${error}`}
+        </p>
+      )}
     </section>
   );
 }
