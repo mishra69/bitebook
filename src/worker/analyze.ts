@@ -1,3 +1,4 @@
+import { replyText, type Completion } from "./openrouter";
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { attachPhotos } from "./meals";
@@ -53,7 +54,10 @@ function requestSettings(model: string) {
     response_format: { type: "json_schema", json_schema: { name: "bitebook_reply", strict: true, schema: REPLY_JSON_SCHEMA } },
     reasoning: { effort: "medium" },
     usage: { include: true },
-    max_tokens: 16_000,
+    // Replies, thinking included, have used 400–1,500 tokens. OpenRouter checks the
+    // balance against the most a call could cost, so a high cap fails calls on a low
+    // balance that would have succeeded (D42).
+    max_tokens: 4_000,
   };
 }
 
@@ -92,22 +96,15 @@ async function callModel(env: ApiEnv, model: string, prompt: string, images: Ima
     },
     body: JSON.stringify({ ...requestSettings(model), messages: [{ role: "user", content }] }),
   });
-  const body = (await res.json().catch(() => null)) as {
-    model?: string;
-    choices?: { message?: { content?: string | null } }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
-    error?: { message?: string; code?: number };
-  } | null;
-  if (!res.ok || !body?.choices?.[0]?.message?.content) {
-    throw new Error(`openrouter ${res.status}: ${body?.error?.message ?? "no reply text"}`.slice(0, 300));
-  }
+  const body = (await res.json().catch(() => null)) as Completion;
+  const text = replyText(res.status, res.ok, body);
   return {
-    text: body.choices[0].message.content,
-    model: body.model ?? model,
+    text,
+    model: body?.model ?? model,
     usage: {
-      input_tokens: body.usage?.prompt_tokens ?? null,
-      output_tokens: body.usage?.completion_tokens ?? null,
-      cost_usd: body.usage?.cost ?? null,
+      input_tokens: body?.usage?.prompt_tokens ?? null,
+      output_tokens: body?.usage?.completion_tokens ?? null,
+      cost_usd: body?.usage?.cost ?? null,
       latency_ms: Date.now() - started,
     },
   };

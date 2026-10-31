@@ -46,7 +46,7 @@ test("with automatic analysis on, a new meal is analyzed by the user's clock and
     provider: "openrouter",
     model: "anthropic/claude-opus-5.5",
     reasoning: { effort: "medium" },
-    max_tokens: 16000,
+    max_tokens: 4000,
     response_format: { type: "json_schema", schema: "bitebook.reply/1", strict: true },
     images: { count: 1, via: "signed_url" },
   });

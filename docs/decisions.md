@@ -640,3 +640,16 @@ sign-in (`users.picture_url`, migration 0017; https only) and returned by `/api/
 It's loaded straight from Google without a referrer. When there's no photo, or it doesn't
 load (offline, a stale URL), the email's initial shows instead. Existing sessions get the
 photo at their next sign-in.
+
+## D42 · 2026-10-31 · Output cap 4,000 tokens; Health keeps its hour
+
+On Oct 30 automatic analysis failed with OpenRouter's 402: "maximum cost exceeds your
+available credits". OpenRouter checks the balance against the most a call could cost, and
+`max_tokens` was 16,000 (about 32¢ of Opus output), while real replies, thinking included,
+used 400–1,500. The cap is now 4,000: room to spare, and calls keep working on a low
+balance. A reply cut off at the cap now fails as "reply cut off at max_tokens" instead of
+as invalid JSON.
+
+The same day a late-saved meal reached Health a night late: its estimate was 41 minutes
+old at the 11:45 pm run, under D34's hour. Every revision so far came within 5 minutes,
+so 20 minutes was offered; the user chose to keep the hour for now and revisit later.
