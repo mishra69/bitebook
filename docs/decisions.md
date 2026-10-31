@@ -669,3 +669,8 @@ the phone logged `voice: false`, and the text sat in `meals.note`) looked like a
 without its player. Meal lists now carry `has_voice`, and the tile is a mic only for a
 voice note, otherwise a page. Text dictated with the keyboard is a note: no audio, no
 transcript.
+
+## D45 · 2026-10-31 · No tile for a meal with only text
+
+Supersedes D44's page icon, at the user's request: a meal with neither photo nor voice note
+shows no tile at all, just its estimate and note. The mic tile stays for voice notes.

@@ -131,7 +131,7 @@ export function Analyze() {
               <li key={m.id} class="meal">
                 <label class="pick-row">
                   <input type="checkbox" checked={selected.has(m.id)} onChange={() => toggle(m.id)} />
-                  {m.photos.length ? <img class="thumb small" src={`/api/photos/${m.photos[0].id}/display`} alt="" loading="lazy" /> : <NoPhoto small voice={!!m.has_voice} />}
+                  {m.photos.length ? <img class="thumb small" src={`/api/photos/${m.photos[0].id}/display`} alt="" loading="lazy" /> : <NoPhoto small voice={!!m.has_voice} blank />}
                   <span>
                     <strong>{m.taken_at.slice(5, 10).replace("-", "/")} {timeOfDay(m.taken_at)}</strong> {m.meal_type ?? "meal"}
                     <span class="muted small"> · {m.photos.length ? `${m.photos.length} photo${m.photos.length === 1 ? "" : "s"}` : "no photo"}</span>
@@ -361,7 +361,7 @@ function BatchCard({ batch, onAbandon, onImported }: { batch: BatchView; onAband
       <div class="thumbs">
         {batch.entries.map((e) => (
           <figure key={e.key} class="thumb keyed" title={mealLabel(e.meal.taken_at, e.meal.meal_type)}>
-            {e.files.length ? <img src={`/api/photos/${e.files[0].photo_id}/display`} alt="" loading="lazy" /> : <NoPhoto voice={!!e.meal.has_voice} />}
+            {e.files.length ? <img src={`/api/photos/${e.files[0].photo_id}/display`} alt="" loading="lazy" /> : <NoPhoto voice={!!e.meal.has_voice} blank />}
             <figcaption>{e.key}</figcaption>
           </figure>
         ))}

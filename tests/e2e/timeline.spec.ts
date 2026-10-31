@@ -58,12 +58,14 @@ test("earlier days are rows with totals that open to their meals, and older days
 });
 
 test("a meal without a photo shows a mic only if it has a voice note", async ({ page, request }) => {
-  // Text only, as keyboard dictation into the note leaves it: a page, not a mic.
+  // Text only, as keyboard dictation into the note leaves it: just the text, no tile.
   const id = ulid();
   expect((await request.post("/api/meals", { data: { id, taken_at: "2026-10-12T08:30:00-05:00", tz: "America/Chicago", meal_type: null, note: "dictated shake", photos: [] } })).status()).toBe(201);
   await openApp(page);
   const day = page.locator("li.day", { has: page.locator(".day-title strong", { hasText: "Mon, Oct 12" }) });
-  await expect(day.locator(".meal", { hasText: "dictated shake" }).getByLabel("Written note, no photo")).toHaveCount(1);
+  const meal = day.locator(".meal", { hasText: "dictated shake" });
+  await expect(meal).toHaveCount(1);
+  await expect(meal.locator(".thumb")).toHaveCount(0);
   await request.delete(`/api/meals/${id}`);
 });
 
