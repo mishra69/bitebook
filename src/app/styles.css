@@ -273,3 +273,6 @@ ul { margin: 0; padding-left: 1.2rem; }
 .day-macros { font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 .more { text-align: center; padding: 1rem 0; }
 .day .meal { background: var(--bg); }
+.icon { vertical-align: -0.18em; flex: none; }
+.bottom-bar .icon { margin-right: 0.15em; }
+.thumb.no-photo .icon { width: 40%; height: 40%; }

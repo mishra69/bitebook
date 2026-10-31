@@ -1,3 +1,4 @@
+import { MicIcon } from "./Icons";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Meal } from "../shared/meals";
 import { MAX_VOICE_MS } from "../shared/meals";
@@ -115,7 +116,7 @@ function Correct({ post }: { post: Post }) {
   );
 }
 
-// A text box with a 🎙 button: what's said is transcribed on the server and added to the text.
+// A text box with a mic button: what's said is transcribed on the server and added to the text.
 function TextWithVoice({ value, placeholder, onChange }: { value: string; placeholder: string; onChange: (v: string) => void }) {
   const [rec, setRec] = useState<{ stop: () => Promise<Recording>; started: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -160,7 +161,7 @@ function TextWithVoice({ value, placeholder, onChange }: { value: string; placeh
     <div class="text-voice">
       <textarea rows={2} maxLength={2000} placeholder={placeholder} value={value} onInput={(e) => onChange((e.target as HTMLTextAreaElement).value)} />
       <button class={"voice" + (rec ? " recording" : "")} disabled={busy} onClick={toggle}>
-        {busy ? "Transcribing…" : rec ? `● ${formatDuration(now - rec.started)} · tap to stop` : "🎙 Say it"}
+        {busy ? "Transcribing…" : rec ? `● ${formatDuration(now - rec.started)} · tap to stop` : <><MicIcon /> Say it</>}
       </button>
     </div>
   );

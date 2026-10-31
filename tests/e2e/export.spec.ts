@@ -107,7 +107,7 @@ test("helpings show in the prompt with each photo's own time", async ({ request 
 test("a voice note's transcript goes into the prompt", async ({ page, request }) => {
   for (const m of (await (await request.get("/api/batches/pending-meals")).json()).meals) await request.delete(`/api/meals/${m.id}`);
   await openApp(page);
-  await page.getByRole("button", { name: "New meal" }).click();
+  await page.getByRole("button", { name: "Snap it" }).click();
   await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
   await expect(page.locator(".draft figure.thumb")).toHaveCount(1);
   await page.locator(".draft .note").fill("voice to prompt");

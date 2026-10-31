@@ -70,7 +70,7 @@ Laptop
 
 > **Tier:** Core · **Verified:** 2026-10-31
 
-**Capture.** Tap "New meal" to open the camera, then take one or more photos. An
+**Capture.** Tap "Snap it" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
 and queues both copies. The upload sends the original and the display copy. The meal is
 "pending analysis". A photo of a package or nutrition label can be part of any meal; the
@@ -88,11 +88,12 @@ describe each helping before saving. The server transcribes it with Whisper (Wor
 AI), and the prompt carries the transcript. The transcript isn't editable: if it's often
 wrong, the fix is a better transcriber, not hand-editing (D21).
 
-**A meal missed.** "＋ Missed meal", next to New meal, opens a draft without a photo:
-set when it was eaten (today or yesterday; the time starts at now and steps back by the
-hour) and describe it in a voice note or a note. The meal type is optional and suggested
-from the time. The prompt marks the time as approximate and tells the model it's a
-description only (D24, D39).
+**A meal by voice, or one missed.** "Say it", next to Snap it, opens a draft without a
+photo and starts recording at once. It's for routine meals not worth a photo, and for meals
+logged afterwards: the time starts at now and steps back by the hour, to today or
+yesterday. A typed note works too. The meal type is optional and suggested from the
+time. The prompt marks the time as approximate and tells the model it's a description
+only (D24, D39, D40).
 
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
@@ -315,7 +316,7 @@ Still to check, then delete this section:
 - **Reminders:** turn them on from the card on Meals (home-screen app only), then
   avatar → Settings → Reminders → "Send a test". Does it arrive, and does tapping it open
   Meals? Does the 10:30 pm one arrive on time?
-- **A missed meal:** "＋ Missed meal" (next to New meal), record a note, save. Does the
+- **A meal by voice:** "Say it" (next to Snap it), speak, stop, save. Does the
   reply estimate it sensibly from the words alone?
 
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
@@ -383,7 +384,7 @@ easy enough for family members.
 
 Built (`src/app/`): tabs Meals (capture, questions waiting, running total, chat-waiting
 card, today's meals, then earlier days as one row per day with its totals, opening to
-its meals and loading older days on scroll; New meal and Missed meal in the bottom bar)
+its meals and loading older days on scroll; Say it and Snap it in the bottom bar)
 and Memory; the avatar in the header opens Trends
 (daily charts, latest comment) and Settings; screens Meal detail (analyses, questions,
 corrections) and Analyze (the chat handoff, reached from Meals and Trends). See D29, D30,
@@ -391,7 +392,7 @@ D37, D39. Ideas for later: storage usage in Settings, daily targets for the runn
 
 ## 11. Build order
 
-> **Tier:** Plan · **Verified:** 2026-10-26 · **Expires:** 2027-01-17
+> **Tier:** Plan · **Verified:** 2026-10-31 · **Expires:** 2027-01-31
 
 *Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19),
 voice notes (D21), fiber (D22), missed meals without a photo (D24), reminders (D25), the
@@ -429,6 +430,14 @@ about 2,600 input tokens per photo):
   would retire foods that are still eaten.
 - **Smaller photos for the model.** At about 1,000 px instead of 1,600, image tokens drop
   by about 60%. Test on a few meals before switching, since portions may suffer.
+- **Model and photo-size experiment** (added 2026-10-31). Real runs average 5.2¢ a meal:
+  the text prompt is ~48% of it, output ~31%, photos ~21%, so the model matters most and
+  photo size least. Replay the same meals through Opus twice (the noise floor), Sonnet,
+  Haiku and smaller photos, in chat mode on the user's Pro plan, with an experiment
+  import that never touches real estimates. Also: send only relevant remembered foods.
+- **"Again" chips for routine meals** (added 2026-10-31). Under "Say it", the meals usually
+  eaten at this time ("coffee + cake"), logged in one tap. Open question: copy the last
+  estimate without a model call, or still analyze; the user is unsure the first works.
 
 Backlog (corpus only, no effect on nutrition data):
 - **👎 on a bad transcript.** One tap on the meal detail flags a voice note's transcript

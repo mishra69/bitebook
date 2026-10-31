@@ -1,3 +1,4 @@
+import { MicIcon } from "./Icons";
 import { useEffect, useMemo } from "preact/hooks";
 import type { Meal } from "../shared/meals";
 import { retryMeal, removeFromOutbox, type OutboxMeal } from "./lib/outbox";
@@ -11,7 +12,7 @@ export const rowTakenAt = (r: Row) => (r.kind === "local" ? r.meal.takenAt : r.m
 // Stands in for the photo of a meal added afterwards from a description (D24).
 export const NoPhoto = ({ small }: { small?: boolean }) => (
   <span class={"thumb no-photo" + (small ? " small" : "")} title="Added without a photo" aria-label="No photo">
-    🎙
+    <MicIcon />
   </span>
 );
 

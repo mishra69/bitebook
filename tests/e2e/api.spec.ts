@@ -81,7 +81,7 @@ test("a correction re-estimates the meal; spoken words are transcribed into the 
   await openApp(page, `#/meal/${id}`);
   await page.getByRole("button", { name: "Something wrong? Correct this" }).click();
   const box = page.locator(".correct");
-  await box.getByRole("button", { name: "🎙 Say it" }).click();
+  await box.getByRole("button", { name: "Say it" }).click();
   await page.waitForTimeout(1200);
   await box.getByRole("button", { name: /tap to stop/ }).click();
   await expect(box.locator("textarea")).toHaveValue(/^\(test transcript of \d+ bytes\)$/);

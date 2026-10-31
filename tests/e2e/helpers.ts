@@ -14,7 +14,7 @@ export async function openApp(page: Page, hash = "#/") {
 
 // Takes photos through the real capture flow and saves the meal.
 export async function captureMeal(page: Page, files: string[], note?: string) {
-  await page.getByRole("button", { name: "New meal" }).click();
+  await page.getByRole("button", { name: "Snap it" }).click();
   for (const [i, f] of files.entries()) {
     await page.locator("input[type=file]").setInputFiles(fixture(f));
     await expect(page.locator(".draft figure.thumb")).toHaveCount(i + 1);

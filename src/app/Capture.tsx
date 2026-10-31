@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ulid } from "../shared/ulid";
 import { MAX_VOICE_MS, MEAL_TYPES, type MealType } from "../shared/meals";
+import { CameraIcon, MicIcon } from "./Icons";
 import { diag } from "./lib/diag";
 import { isStaleDraft } from "./lib/drafts";
 import { preparePhoto, sha256Hex } from "./lib/image";
@@ -72,9 +73,12 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
     noteTimer.current = setTimeout(() => latest.current && setDraft(latest.current), 400);
   };
 
-  // A meal without a photo (D24), unless one is already being composed.
-  const startMissed = async () => {
+  // A meal without a photo (D24, D40), unless one is already being composed. From "Say it"
+  // the recording starts straight away, as "Snap it" goes straight to the camera.
+  const [autoRecord, setAutoRecord] = useState(false);
+  const startMissed = async (record = false) => {
     if (await getDraft(userId)) return;
+    setAutoRecord(record);
     const takenAt = missedMealTime(localIso(new Date()), 0);
     await setDraft({
       id: ulid(),
@@ -226,7 +230,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
           {draft.missed && (
             <>
               <p class="missed-intro">
-                <strong>A meal you missed.</strong> Say what you ate and roughly how much; a photo is optional.
+                <strong>Describe your meal.</strong> Say what you ate and roughly how much. Eaten earlier? Step the time back.
               </p>
               <div class="chips" role="radiogroup" aria-label="Day">
                 {["Today", "Yesterday"].map((label, daysAgo) => (
@@ -279,7 +283,10 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
             onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
           />
           <VoiceNote
+            key={draft.id}
             draft={draft}
+            autoStart={autoRecord}
+            onAutoStarted={() => setAutoRecord(false)}
             onRecorded={async (r) => {
               const sha256 = await sha256Hex(await r.blob.arrayBuffer());
               await edit((d) => ({ ...d, voice: { blob: r.blob, mime: r.mime, sha256, durationMs: r.durationMs, uploaded: false } }));
@@ -302,8 +309,12 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
           </>
         ) : (
           <>
-            <button class="secondary big missed" onClick={startMissed}>＋ Missed meal</button>
-            <button class="primary big" onClick={openCamera}>New meal</button>
+            <button class="secondary big missed" onClick={() => startMissed(true)}>
+              <MicIcon /> Say it
+            </button>
+            <button class="primary big" onClick={openCamera}>
+              <CameraIcon /> Snap it
+            </button>
           </>
         )}
       </div>
@@ -315,12 +326,16 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
 // photos, uploaded with the meal, and transcribed on the server; the text isn't editable.
 function VoiceNote({
   draft,
+  autoStart,
+  onAutoStarted,
   onRecorded,
   onRemove,
   onError,
   onRecordingChange,
 }: {
   draft: OutboxMeal;
+  autoStart: boolean;
+  onAutoStarted: () => void;
   onRecorded: (r: Recording) => Promise<void>;
   onRemove: () => void;
   onError: (msg: string | null) => void;
@@ -361,6 +376,13 @@ function VoiceNote({
     }
   };
 
+  // Opened from "Say it": start recording at once (D40).
+  useEffect(() => {
+    if (!autoStart) return;
+    onAutoStarted();
+    if (!draft.voice) start();
+  }, [autoStart]);
+
   if (rec) {
     return (
       <button class="voice recording" onClick={() => rec.stop().then(finish)}>
@@ -371,7 +393,7 @@ function VoiceNote({
   if (draft.voice && url) {
     return (
       <div class="voice saved">
-        <span>🎙 Voice note · {formatDuration(draft.voice.durationMs)}</span>
+        <span><MicIcon /> Voice note · {formatDuration(draft.voice.durationMs)}</span>
         <audio controls src={url} preload="metadata" />
         <button class="link" onClick={onRemove}>Remove</button>
       </div>
@@ -379,7 +401,7 @@ function VoiceNote({
   }
   return (
     <button class="voice" onClick={start}>
-      🎙 Add a voice note (up to {formatDuration(MAX_VOICE_MS)})
+      <MicIcon /> Add a voice note (up to {formatDuration(MAX_VOICE_MS)})
     </button>
   );
 }

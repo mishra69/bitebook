@@ -3,7 +3,7 @@ import { allSaved, captureMeal, openApp, serverMeal, sql } from "./helpers";
 
 test("a meal uses its photo's EXIF time, survives a reload mid-draft, and uploads", async ({ page, request }) => {
   await openApp(page);
-  await page.getByRole("button", { name: "New meal" }).click();
+  await page.getByRole("button", { name: "Snap it" }).click();
   await page.locator("input[type=file]").setInputFiles("tests/fixtures/meal-with-offset.jpg");
   await expect(page.locator(".chip.on")).toHaveText("dinner"); // 19:32 local
   await page.locator(".draft .note").fill("draft survives reload");
@@ -151,7 +151,7 @@ test("deleting a meal that hasn't uploaded removes it for good", async ({ page, 
 
 test("a draft left open for over 90 minutes is saved when the app is next opened", async ({ page, request }) => {
   await openApp(page);
-  await page.getByRole("button", { name: "New meal" }).click();
+  await page.getByRole("button", { name: "Snap it" }).click();
   await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
   await page.locator(".draft .note").fill("left open");
   await page.waitForTimeout(600); // the note is saved after a pause in typing
@@ -183,7 +183,7 @@ test("a draft left open for over 90 minutes is saved when the app is next opened
 
 test("a draft still in progress stays open across a reload", async ({ page }) => {
   await openApp(page);
-  await page.getByRole("button", { name: "New meal" }).click();
+  await page.getByRole("button", { name: "Snap it" }).click();
   await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
   await expect(page.locator(".draft figure.thumb")).toHaveCount(1); // shown = stored on the phone
   await page.reload();
@@ -196,7 +196,7 @@ test("a draft still in progress stays open across a reload", async ({ page }) =>
 
 test("a voice note is recorded into the draft, survives a reload, uploads, and is transcribed", async ({ page, request }) => {
   await openApp(page);
-  await page.getByRole("button", { name: "New meal" }).click();
+  await page.getByRole("button", { name: "Snap it" }).click();
   await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
   await expect(page.locator(".draft figure.thumb")).toHaveCount(1);
   await page.locator(".draft .note").fill("voice meal");
@@ -231,7 +231,7 @@ test("a voice note is recorded into the draft, survives a reload, uploads, and i
 
 test("a voice note can be removed from the draft, and over-long ones are refused", async ({ page, request }) => {
   await openApp(page);
-  await page.getByRole("button", { name: "New meal" }).click();
+  await page.getByRole("button", { name: "Snap it" }).click();
   await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
   await expect(page.locator(".draft figure.thumb")).toHaveCount(1);
   await page.getByRole("button", { name: /Add a voice note/ }).click();
@@ -251,7 +251,7 @@ test("a voice note can be removed from the draft, and over-long ones are refused
   expect((await res.json()).detail).toBe("voice.duration");
 });
 
-test("a missed meal is added from Meals with a voice note and no photo, and goes into the next prompt", async ({ page, request }) => {
+test("Say it logs a meal by voice alone, stepped back to yesterday, and it goes into the next prompt", async ({ page, request }) => {
   // The phone's clock: yesterday at 21:47 (so "Yesterday" below is two days ago).
   const fake = new Date();
   fake.setDate(fake.getDate() - 1);
@@ -263,12 +263,19 @@ test("a missed meal is added from Meals with a voice note and no photo, and goes
   await expect(page.locator(".tabs a[aria-current=page]")).toHaveText("Meals");
   // Next to New meal, from anywhere on the page; the form opens at the top and comes into view.
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.getByRole("button", { name: "＋ Missed meal" }).click();
-  await expect(page.locator(".draft .missed-intro")).toContainText("A meal you missed");
+  // "Say it" opens a meal without a photo and starts recording at once (D40).
+  await page.getByRole("button", { name: "Say it" }).click();
+  await expect(page.locator(".draft .missed-intro")).toContainText("Describe your meal");
   await expect(page.locator(".draft")).toBeInViewport();
   await expect(page.locator(".draft figure.thumb")).toHaveCount(0);
+  await expect(page.locator(".voice.recording")).toBeVisible();
+  await page.waitForTimeout(1500);
+  await page.locator(".voice.recording").click();
+  await expect(page.locator(".voice.saved")).toBeVisible();
   const save = page.getByRole("button", { name: "Save meal" });
-  await expect(save).toBeDisabled(); // needs a description
+  await expect(save).toBeEnabled();
+  await page.locator(".voice.saved").getByRole("button", { name: "Remove" }).click();
+  await expect(save).toBeDisabled(); // needs a voice note or a note
 
   // It starts at now; step back by the hour, and forward once there's room (D39).
   const time = page.locator(".missed-time strong");
@@ -284,7 +291,7 @@ test("a missed meal is added from Meals with a voice note and no photo, and goes
   await page.getByRole("radio", { name: "dinner" }).click();
   await page.getByRole("radio", { name: "Yesterday" }).click();
   await page.locator(".draft .note").fill("missed lunch");
-  await page.getByRole("button", { name: /Add a voice note/ }).click();
+  await page.getByRole("button", { name: /Add a voice note/ }).click(); // recorded again by hand
   await page.waitForTimeout(1500);
   await page.locator(".voice.recording").click();
   await expect(page.locator(".voice.saved")).toBeVisible();

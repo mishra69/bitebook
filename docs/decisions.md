@@ -610,3 +610,21 @@ Supersedes D24's "usual hour" for missed meals, and D37's full list of earlier m
   day's meals, fetched then (`GET /api/meals?day=`). Yesterday and any day with a meal not
   yet analyzed start open. Days come 30 at a time from `GET /api/days`, and older ones
   load as the list scrolls (no button). "Recently deleted" moved next to the heading.
+
+## D40 · 2026-10-31 · "Say it" and "Snap it"
+
+Some meals aren't worth a photo, like the same coffee and cake every morning; a voice note
+says enough. The missed-meal button (D38) already opened a meal without a photo, at
+now, so it becomes the voice button:
+
+- **The bottom bar is "Say it" and "Snap it".** Say it opens a meal without a photo and
+  starts recording at once, as Snap it (formerly New meal) goes straight to the camera.
+  Speak, tap to stop, save. Logging a missed meal is the same flow with the time stepped
+  back (D39); the user accepted that it's a little hidden.
+- **Icons, not emoji.** A line mic like the iOS keyboard's and a camera, drawn in the text
+  colour (`src/app/Icons.tsx`); the 🎙 elsewhere (voice notes, meals without a photo)
+  became the same mic.
+- On iPhone the home-screen app may ask for the microphone again after a relaunch, so
+  the prompt can appear right as Say it is tapped. Accepted for now; the fallback is a big
+  record button instead of auto-start.
+- **"Again" chips** for routine meals are parked (SPEC §11).
