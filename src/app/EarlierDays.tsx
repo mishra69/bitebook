@@ -1,76 +1,131 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { DeletedMeal, Meal } from "../shared/meals";
 import { MealRow } from "./MealRow";
 import { onMealsChanged } from "./lib/notify";
 import { restoreSavedMeal } from "./lib/mealsApi";
-import { startOfToday, timeOfDay } from "./lib/time";
+import { localDate, type DayTotals } from "./lib/overview";
+import { timeOfDay } from "./lib/time";
 
-const PAGE = 40;
+const PAGE = 30; // days per request; more load as the list scrolls into view
 
-// Below today on the Meals tab (D37): every earlier meal, newest first, grouped by the day
-// it was eaten (in the zone it was eaten in). Today and meals still on the phone are
-// MealList's.
+// Below today on the Meals tab (D39): one row per earlier day with meals, newest first,
+// with that day's totals. A row opens to its meals (photos and estimates), fetched then.
+// Yesterday, and any day with a meal not yet analyzed, start open.
 export function EarlierDays() {
-  const [meals, setMeals] = useState<Meal[]>([]);
-  const [next, setNext] = useState<number | null | undefined>(undefined); // undefined: not loaded yet
+  const [days, setDays] = useState<DayTotals[]>([]);
+  const [next, setNext] = useState<string | null | undefined>(undefined); // undefined: not loaded yet
   const [error, setError] = useState(false);
+  const [version, setVersion] = useState(0); // bumped when meals change, so open days refetch
   const [showDeleted, setShowDeleted] = useState(false);
-  const [deletedVersion, setDeletedVersion] = useState(0);
+  const loading = useRef(false);
+  const sentinel = useRef<HTMLDivElement>(null);
 
-  const load = async (before: number | null, replace: boolean) => {
+  const load = async (before: string, replace: boolean, limit = PAGE) => {
+    if (loading.current) return;
+    loading.current = true;
     try {
-      const res = await fetch(`/api/meals?limit=${PAGE}${before ? `&before=${before}` : ""}`);
+      const res = await fetch(`/api/days?before=${before}&limit=${limit}`);
       if (!res.ok) throw new Error();
-      const d = (await res.json()) as { meals: Meal[]; next_before: number | null };
-      setMeals((m) => (replace ? d.meals : [...m, ...d.meals]));
+      const d = (await res.json()) as { days: DayTotals[]; next_before: string | null };
+      setDays((old) => (replace ? d.days : [...old, ...d.days]));
       setNext(d.next_before);
       setError(false);
     } catch {
       setError(true);
+    } finally {
+      loading.current = false;
     }
   };
 
+  const shown = useRef(0);
+  shown.current = days.length;
   useEffect(() => {
-    load(null, true);
+    load(localDate(), true);
     return onMealsChanged(() => {
-      load(null, true);
-      setDeletedVersion((v) => v + 1);
+      // As many days as are showing, so the list doesn't jump back to the first page.
+      loading.current = false;
+      load(localDate(), true, Math.min(Math.max(shown.current, PAGE), 92));
+      setVersion((v) => v + 1);
     });
   }, []);
 
-  const today = startOfToday();
-  const days = groupByDay(meals.filter((m) => Date.parse(m.taken_at) < today));
+  // Infinite scroll: the next page loads as the end of the list comes near.
+  useEffect(() => {
+    if (!next || !sentinel.current) return;
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && load(next, false), { rootMargin: "400px" });
+    io.observe(sentinel.current);
+    return () => io.disconnect();
+  }, [next]);
+
   return (
     <section class="timeline" aria-label="Earlier meals">
-      {error && <p class="bad">Couldn't load earlier meals. Are you online?</p>}
-      {days.map(([day, list]) => (
-        <div key={day}>
-          <h2 class="section-title">{dayLabel(day)}</h2>
-          <ul class="meals">
-            {list.map((meal) => (
-              <MealRow key={meal.id} row={{ kind: "server", meal }} />
-            ))}
-          </ul>
-        </div>
-      ))}
-      {next && (
-        <button class="button secondary wide" onClick={() => load(next, false)}>
-          Show older meals
+      <div class="earlier-head">
+        <h2 class="section-title">Earlier</h2>
+        <button class="link" onClick={() => setShowDeleted((o) => !o)}>
+          {showDeleted ? "Hide recently deleted" : "Recently deleted"}
         </button>
-      )}
-      <button class="link" onClick={() => setShowDeleted((o) => !o)}>
-        {showDeleted ? "Hide recently deleted" : "Recently deleted"}
-      </button>
-      {showDeleted && <RecentlyDeleted version={deletedVersion} />}
+      </div>
+      {showDeleted && <RecentlyDeleted version={version} />}
+      {error && <p class="bad">Couldn't load earlier meals. Are you online?</p>}
+      {next !== undefined && days.length === 0 && !error && <p class="muted">No earlier meals.</p>}
+      <ul class="days">
+        {days.map((d) => (
+          <DayRow key={d.date} day={d} version={version} />
+        ))}
+      </ul>
+      {next && <div ref={sentinel} class="muted small more">Loading older days…</div>}
     </section>
   );
 }
 
-// taken_at carries the local time of the meal, so its date part is the day it was eaten.
-function groupByDay(meals: Meal[]): [string, Meal[]][] {
-  const out = new Map<string, Meal[]>();
-  for (const m of meals) out.set(m.taken_at.slice(0, 10), [...(out.get(m.taken_at.slice(0, 10)) ?? []), m]);
-  return [...out];
+const n = (v: number) => Math.round(v).toLocaleString();
+
+function DayRow({ day, version }: { day: DayTotals; version: number }) {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const pending = day.analyzed < day.meals;
+  const [open, setOpen] = useState(day.date === localDate(yesterday) || pending);
+  const [meals, setMeals] = useState<Meal[] | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    fetch(`/api/meals?day=${day.date}&limit=200`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ meals: Meal[] }>) : Promise.reject()))
+      .then((d) => setMeals(d.meals))
+      .catch(() => setMeals((m) => m ?? []));
+  }, [open, version]);
+
+  return (
+    <li class={"day" + (open ? " open" : "")}>
+      <button class="day-head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span class="day-title">
+          <strong>{dayLabel(day.date)}</strong>
+          <span class="muted small">
+            {day.meals} meal{day.meals === 1 ? "" : "s"}
+            {pending && ` · ${day.analyzed} analyzed${day.analyzing ? `, ${day.analyzing} analyzing` : ""}`}
+          </span>
+          <span class="chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        </span>
+        {day.analyzed > 0 && (
+          <span class="day-macros">
+            {pending && "≥ "}
+            <strong>{n(day.kcal)} kcal</strong> · P {n(day.protein_g)} · C {n(day.carbs_g)} · F {n(day.fat_g)}
+            {day.fiber_meals > 0 && ` · fiber ${n(day.fiber_g)}`}
+          </span>
+        )}
+      </button>
+      {open &&
+        (meals === null ? (
+          <p class="muted small">Loading…</p>
+        ) : (
+          <ul class="meals">
+            {meals.map((meal) => (
+              <MealRow key={meal.id} row={{ kind: "server", meal }} />
+            ))}
+          </ul>
+        ))}
+    </li>
+  );
 }
 
 function dayLabel(day: string) {

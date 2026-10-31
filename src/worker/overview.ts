@@ -19,22 +19,19 @@ export type DayTotals = {
   fiber_meals: number; // analyzed meals with a fiber estimate (prompt/7 on)
 };
 
-overview.get("/overview", async (c) => {
-  const user = c.get("user");
-  const days = Math.min(Math.max(Number(c.req.query("days") ?? 30) || 30, 1), 92);
-  // A day of slack, since a meal's local date can be "tomorrow" in UTC terms and back.
-  const since = Date.now() - (days + 1) * 86_400_000;
-  const { results: rows } = await c.env.DB.prepare(
-    `SELECT substr(m.taken_at, 1, 10) AS date, a.payload,
-       EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running')) AS busy
-     FROM meals m
-     LEFT JOIN analyses a ON a.id = (SELECT id FROM analyses x WHERE x.user_id = ?1 AND x.meal_id = m.id AND x.skipped = 0
-                                     ORDER BY x.created_at DESC LIMIT 1)
-     WHERE m.user_id = ?1 AND m.deleted_at IS NULL AND m.taken_ms >= ?2`,
-  )
-    .bind(user.id, since)
+// Totals per local day for the user's meals matching `where` (?2, ?3… bound to `args`).
+async function dayTotals(db: D1Database, userId: string, where: string, ...args: (string | number)[]) {
+  const { results: rows } = await db
+    .prepare(
+      `SELECT substr(m.taken_at, 1, 10) AS date, a.payload,
+         EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running')) AS busy
+       FROM meals m
+       LEFT JOIN analyses a ON a.id = (SELECT id FROM analyses x WHERE x.user_id = ?1 AND x.meal_id = m.id AND x.skipped = 0
+                                       ORDER BY x.created_at DESC LIMIT 1)
+       WHERE m.user_id = ?1 AND m.deleted_at IS NULL AND ${where}`,
+    )
+    .bind(userId, ...args)
     .all<{ date: string; payload: string | null; busy: number }>();
-
   const byDate = new Map<string, DayTotals>();
   for (const r of rows) {
     const d = byDate.get(r.date) ?? { date: r.date, meals: 0, analyzed: 0, analyzing: 0, kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, fiber_meals: 0 };
@@ -54,6 +51,41 @@ overview.get("/overview", async (c) => {
     } else if (r.busy) d.analyzing++;
     byDate.set(r.date, d);
   }
+  return byDate;
+}
+
+const isDate = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+// GET /api/days?before=YYYY-MM-DD&limit=30 — the days with meals before that local date,
+// newest first, with their totals: the collapsed rows of earlier days on Meals (D39).
+// next_before pages further back (null when there's nothing older).
+overview.get("/days", async (c) => {
+  const user = c.get("user");
+  const before = c.req.query("before");
+  if (!isDate(before)) return c.json({ error: "before" }, 400);
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 30) || 30, 1), 92);
+  const { results: dates } = await c.env.DB.prepare(
+    `SELECT DISTINCT substr(taken_at, 1, 10) AS date FROM meals
+     WHERE user_id = ?1 AND deleted_at IS NULL AND substr(taken_at, 1, 10) < ?2 ORDER BY date DESC LIMIT ?3`,
+  )
+    .bind(user.id, before, limit + 1)
+    .all<{ date: string }>();
+  const page = dates.slice(0, limit);
+  if (!page.length) return c.json({ days: [], next_before: null });
+  const oldest = page[page.length - 1].date;
+  const byDate = await dayTotals(c.env.DB, user.id, "substr(m.taken_at, 1, 10) BETWEEN ?2 AND ?3", oldest, page[0].date);
+  return c.json({
+    days: page.map((d) => byDate.get(d.date)!),
+    next_before: dates.length > limit ? oldest : null,
+  });
+});
+
+overview.get("/overview", async (c) => {
+  const user = c.get("user");
+  const days = Math.min(Math.max(Number(c.req.query("days") ?? 30) || 30, 1), 92);
+  // A day of slack, since a meal's local date can be "tomorrow" in UTC terms and back.
+  const since = Date.now() - (days + 1) * 86_400_000;
+  const byDate = await dayTotals(c.env.DB, user.id, "m.taken_ms >= ?2", since);
 
   const [questions, latest, settings, chatWaiting] = await Promise.all([
     c.env.DB.prepare(

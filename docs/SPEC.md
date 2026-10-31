@@ -68,7 +68,7 @@ Laptop
 
 ## 3. Core flows
 
-> **Tier:** Core · **Verified:** 2026-10-28
+> **Tier:** Core · **Verified:** 2026-10-31
 
 **Capture.** Tap "New meal" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
@@ -89,9 +89,10 @@ AI), and the prompt carries the transcript. The transcript isn't editable: if it
 wrong, the fix is a better transcriber, not hand-editing (D21).
 
 **A meal missed.** "＋ Missed meal", next to New meal, opens a draft without a photo:
-pick the day (today or yesterday) and the meal type, and describe it in a voice note or
-a note. It gets that meal type's usual hour, and the prompt tells the model it's a
-description only (D24).
+set when it was eaten (today or yesterday; the time starts at now and steps back by the
+hour) and describe it in a voice note or a note. The meal type is optional and suggested
+from the time. The prompt marks the time as approximate and tells the model it's a
+description only (D24, D39).
 
 **Export.** Choose the meals to export (by default, every pending meal). The app creates
 a **batch** that gives each meal a short key (`A`, `B`, `C`, …), renders the prompt, and
@@ -290,7 +291,7 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
 
 ## 7. Capture: what still needs an iPhone
 
-> **Tier:** Plan · **Verified:** 2026-10-28 · **Expires:** 2026-12-17
+> **Tier:** Plan · **Verified:** 2026-10-31 · **Expires:** 2026-12-17
 
 Capture is built (`src/app/Capture.tsx`, `src/app/lib/`, `src/worker/meals.ts`). Checked on
 the iPhone by 2026-10-23: reload behind the camera, offline save then upload on
@@ -319,8 +320,9 @@ Still to check, then delete this section:
 
 - **Auto-save:** leave a draft open, come back more than 90 minutes later, and the meal
   should be saved, with a note saying so.
-- **Meals and the avatar (D37):** is one Meals tab comfortable to scroll, with today on
-  top and earlier days below? Is the avatar menu easy to find for Trends and Settings?
+- **Meals and the avatar (D37, D39):** is one Meals tab comfortable to scroll, with today
+  on top and earlier days as rows below? Do the right days start open (yesterday, and any
+  day still being analyzed)? Is the missed-meal time stepper quick enough? Is the avatar menu easy to find for Trends and Settings?
 - **Slow uploads:** the watchdog (D32) caught the hangs but retries hung too, every one with
   0 bytes sent, until a relaunch; meals still on the phone showed "?" thumbnails. Both point
   at Blobs read back from IndexedDB going unreadable, so the outbox now keeps bytes (D36).
@@ -377,14 +379,15 @@ easy enough for family members.
 
 ## 10. Screens
 
-> **Tier:** Plan · **Verified:** 2026-10-28 · **Expires:** 2027-01-28
+> **Tier:** Plan · **Verified:** 2026-10-31 · **Expires:** 2027-01-31
 
 Built (`src/app/`): tabs Meals (capture, questions waiting, running total, chat-waiting
-card, today's meals, then earlier days; New meal and Missed meal in the bottom bar) and
-Memory; the avatar in the header opens Trends
+card, today's meals, then earlier days as one row per day with its totals, opening to
+its meals and loading older days on scroll; New meal and Missed meal in the bottom bar)
+and Memory; the avatar in the header opens Trends
 (daily charts, latest comment) and Settings; screens Meal detail (analyses, questions,
 corrections) and Analyze (the chat handoff, reached from Meals and Trends). See D29, D30,
-D37. Ideas for later: storage usage in Settings, daily targets for the running total.
+D37, D39. Ideas for later: storage usage in Settings, daily targets for the running total.
 
 ## 11. Build order
 

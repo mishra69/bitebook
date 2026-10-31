@@ -140,6 +140,9 @@ ul { margin: 0; padding-left: 1.2rem; }
 .thumb.no-photo { display: grid; place-items: center; font-size: 1.6rem; border: 1px dashed var(--muted); background: none; }
 .thumb.no-photo.small { font-size: 1.1rem; }
 .missed-intro { margin: 0; }
+.missed-time .chip { text-transform: none; }
+.missed-time { display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0; }
+.missed-time strong { font-size: 1.3rem; font-variant-numeric: tabular-nums; min-width: 5.5rem; text-align: center; }
 .reminder-offer p { margin: 0; }
 .reminders p { margin: 0.25rem 0; }
 .meals.deleted { margin-top: 0.5rem; }
@@ -257,3 +260,16 @@ ul { margin: 0; padding-left: 1.2rem; }
 .apple-health .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; word-break: break-all; background: var(--bg); padding: 0.5rem; border-radius: 8px; }
 .guide .steps ol { padding-left: 1.1rem; margin: 0.3rem 0; }
 .guide code { font-size: 0.85em; }
+
+/* Earlier days on Meals (D39): one row per day, opening to its meals. */
+.earlier-head { display: flex; align-items: baseline; justify-content: space-between; }
+.days { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.day { background: var(--card); border-radius: 12px; }
+.day .meals { padding: 0 0.5rem 0.5rem; }
+.day > p { margin: 0; padding: 0 1rem 0.75rem; }
+.day-head { display: grid; gap: 0.2rem; width: 100%; padding: 0.75rem 1rem; background: none; border: 0; font: inherit; color: var(--fg); text-align: left; cursor: pointer; }
+.day-title { display: flex; align-items: baseline; gap: 0.5rem; }
+.day-title .chevron { margin-left: auto; color: var(--muted); }
+.day-macros { font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.more { text-align: center; padding: 1rem 0; }
+.day .meal { background: var(--bg); }

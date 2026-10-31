@@ -592,3 +592,21 @@ bar.
 D37 put "Add a meal I missed" under today's meals: hard to find, and its form opened at the
 top of the page, out of sight. It's now "＋ Missed meal" in the bottom bar beside New meal,
 and whichever form opens is scrolled into view.
+
+## D39 · 2026-10-31 · Missed meals get a real time; earlier days collapse to rows
+
+Supersedes D24's "usual hour" for missed meals, and D37's full list of earlier meals.
+
+- **A missed meal's time is set, not inferred.** The fixed hour per meal type (breakfast
+  8:30, lunch 13:00, snack 16:30, dinner 19:30) filed meals out of order: a snack after
+  dinner landed at 16:30. The draft now starts at now; "−1 h" steps back, and "+1 h" shows
+  once there's room to step forward. Today/Yesterday keep the clock time. It never goes
+  past now or before yesterday's start. A full time picker was judged too fiddly.
+- **Meal type is optional everywhere.** It's a label and a small hint in the prompt, and
+  nothing else uses it. On a missed meal it's suggested from the time, as for photos, until
+  the user picks or clears it. A missed meal now needs only a voice note or a note.
+- **Earlier days are rows.** Below today, one row per day with meals: the date, meal count
+  and the day's totals (marked "≥" while some meals aren't analyzed). Tapping opens the
+  day's meals, fetched then (`GET /api/meals?day=`). Yesterday and any day with a meal not
+  yet analyzed start open. Days come 30 at a time from `GET /api/days`, and older ones
+  load as the list scrolls (no button). "Recently deleted" moved next to the heading.

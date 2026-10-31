@@ -131,17 +131,21 @@ meals.post("/meals", async (c) => {
 
 // GET /api/meals?since=<epoch ms>&before=<epoch ms>&limit=<n> — newest first, with photo
 // ids for thumbnails. `next_before` pages further back (null when there's nothing older).
+// &day=YYYY-MM-DD: only the meals eaten on that local date (an expanded day, D39).
 meals.get("/meals", async (c) => {
   const user = c.get("user");
   const since = Number(c.req.query("since") ?? 0) || 0;
   const before = Number(c.req.query("before") ?? 0) || Number.MAX_SAFE_INTEGER;
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50) || 50, 1), 200);
+  const day = c.req.query("day");
+  if (day !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return c.json({ error: "day" }, 400);
   const { results: rows } = await c.env.DB.prepare(
     `SELECT id, taken_at, tz, meal_type, note, taken_ms FROM meals
      WHERE user_id = ?1 AND deleted_at IS NULL AND taken_ms >= ?2 AND taken_ms < ?3
+       AND (?5 IS NULL OR substr(taken_at, 1, 10) = ?5)
      ORDER BY taken_ms DESC LIMIT ?4`,
   )
-    .bind(user.id, since, before, limit + 1)
+    .bind(user.id, since, before, limit + 1, day ?? null)
     .all<Omit<Meal, "photos"> & { taken_ms: number }>();
   const page = rows.slice(0, limit);
   const next_before = rows.length > limit ? page[page.length - 1].taken_ms : null;

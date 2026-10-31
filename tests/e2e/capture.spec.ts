@@ -252,6 +252,13 @@ test("a voice note can be removed from the draft, and over-long ones are refused
 });
 
 test("a missed meal is added from Meals with a voice note and no photo, and goes into the next prompt", async ({ page, request }) => {
+  // The phone's clock: yesterday at 21:47 (so "Yesterday" below is two days ago).
+  const fake = new Date();
+  fake.setDate(fake.getDate() - 1);
+  const ymd = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  const now = new Date(`${ymd(fake)}T21:47:05${fake.toLocaleString("en", { timeZone: "America/Chicago", timeZoneName: "longOffset" }).slice(-6)}`);
+  await page.clock.install({ time: now });
+  await page.clock.resume(); // and running from there, so the voice note has a length
   await openApp(page, "#/timeline"); // an old link: Timeline is part of Meals now (D37)
   await expect(page.locator(".tabs a[aria-current=page]")).toHaveText("Meals");
   // Next to New meal, from anywhere on the page; the form opens at the top and comes into view.
@@ -261,10 +268,21 @@ test("a missed meal is added from Meals with a voice note and no photo, and goes
   await expect(page.locator(".draft")).toBeInViewport();
   await expect(page.locator(".draft figure.thumb")).toHaveCount(0);
   const save = page.getByRole("button", { name: "Save meal" });
-  await expect(save).toBeDisabled(); // needs a meal type and a description
+  await expect(save).toBeDisabled(); // needs a description
 
+  // It starts at now; step back by the hour, and forward once there's room (D39).
+  const time = page.locator(".missed-time strong");
+  await expect(time).toHaveText("9:47 PM");
+  await expect(page.getByRole("button", { name: "An hour later" })).toHaveCount(0);
+  await page.getByRole("button", { name: "An hour earlier" }).click();
+  await page.getByRole("button", { name: "An hour earlier" }).click();
+  await expect(time).toHaveText("7:47 PM");
+  await page.getByRole("button", { name: "An hour later" }).click();
+  await expect(time).toHaveText("8:47 PM");
+  // The meal type is a suggestion from the time, and optional.
+  await expect(page.getByRole("radio", { name: "dinner" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("radio", { name: "dinner" }).click();
   await page.getByRole("radio", { name: "Yesterday" }).click();
-  await page.getByRole("radio", { name: "lunch" }).click();
   await page.locator(".draft .note").fill("missed lunch");
   await page.getByRole("button", { name: /Add a voice note/ }).click();
   await page.waitForTimeout(1500);
@@ -272,20 +290,17 @@ test("a missed meal is added from Meals with a voice note and no photo, and goes
   await expect(page.locator(".voice.saved")).toBeVisible();
   await page.reload(); // kept on the phone like any draft
   await expect(page.getByRole("radio", { name: "Yesterday" })).toHaveAttribute("aria-checked", "true");
-  // Typed right after tapping "lunch": both survive (each edit builds on the newest draft).
-  await expect(page.getByRole("radio", { name: "lunch" })).toHaveAttribute("aria-checked", "true");
+  await expect(time).toHaveText("8:47 PM");
+  // Cleared, then typed into: both survive (each edit builds on the newest draft).
+  await expect(page.locator(".draft [aria-label='Meal type'] [aria-checked=true]")).toHaveCount(0);
   await expect(page.locator(".draft .note")).toHaveValue("missed lunch");
   await save.click();
 
   const meal = await serverMeal(request, "missed lunch");
   expect(meal.photos).toEqual([]);
-  expect(meal.meal_type).toBe("lunch");
-  const ymd = await page.evaluate(() => { // yesterday, on the phone's calendar
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  });
-  expect(meal.taken_at.slice(0, 16)).toBe(`${ymd}T13:00`);
+  expect(meal.meal_type).toBe(null);
+  const yesterday = new Date(now.getTime() - 86_400_000);
+  expect(meal.taken_at.slice(0, 16)).toBe(`${ymd(yesterday)}T20:47`);
 
   // Listed under yesterday, without a reload.
   await expect(page.locator(".timeline .meal", { hasText: "missed lunch" }).locator(".no-photo")).toHaveCount(1);
@@ -293,6 +308,6 @@ test("a missed meal is added from Meals with a voice note and no photo, and goes
   const res = await request.post("/api/batches", { data: { meal_ids: [meal.id] } });
   expect(res.status()).toBe(201);
   const { batch } = await res.json();
-  expect(batch.prompt).toContain(`~13:00 · lunch · no photo (added afterwards from my description)\nNote: missed lunch\nVoice note`);
+  expect(batch.prompt).toContain(`~20:47 · meal · no photo (added afterwards from my description)\nNote: missed lunch\nVoice note`);
   await request.post(`/api/batches/${batch.id}/abandon`);
 });

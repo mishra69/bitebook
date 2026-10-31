@@ -1,35 +1,60 @@
 import { expect, test } from "@playwright/test";
 import { openApp, seedMeal } from "./helpers";
 
-test("earlier meals are grouped by day under today, pages back, opens a meal, and deletes with undo", async ({ page, request }) => {
-  // 45 meals, three a day, ending on Oct 10 (local).
-  for (let i = 0; i < 45; i++) {
-    const day = new Date(Date.UTC(2026, 9, 10) - Math.floor(i / 3) * 86_400_000).toISOString().slice(0, 10);
-    const hour = ["08", "13", "19"][i % 3];
-    await seedMeal(request, `${day}T${hour}:00:00-05:00`, `seed ${i}`, ["breakfast", "lunch", "dinner"][i % 3]);
+test("earlier days are rows with totals that open to their meals, and older days load on scroll", async ({ page, request }) => {
+  test.setTimeout(150_000);
+  // One meal a day for 35 days ending Oct 10 (local); all but Oct 10 get analyzed.
+  const ids: string[] = [];
+  for (let i = 0; i < 35; i++) {
+    const day = new Date(Date.UTC(2026, 9, 10) - i * 86_400_000).toISOString().slice(0, 10);
+    ids.push(await seedMeal(request, `${day}T13:00:00-05:00`, `day ${i}`));
   }
+  // And one yesterday, analyzed: yesterday starts open anyway.
+  const y = new Date(Date.now() - 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  ids.push(await seedMeal(request, `${y}T13:00:00-05:00`, "yesterday's lunch"));
+  await request.put("/api/analysis/settings", { data: { model: "anthropic/claude-opus-5.5" } });
+  await request.post("/api/analysis/queue-pending", { data: { meal_ids: ids.slice(1) } });
+  await expect
+    .poll(async () => {
+      const { days } = await (await request.get("/api/days?before=2026-10-10&limit=40")).json();
+      return days.filter((d: { date: string; analyzed: number }) => d.date >= "2026-09-06" && d.analyzed > 0).length;
+    }, { timeout: 120_000 })
+    .toBe(34);
+  await expect.poll(async () => (await (await request.get(`/api/meals/${ids[35]}`)).json()).meal.analyses.length).toBeGreaterThan(0);
+  await request.put("/api/analysis/settings", { data: { model: null } });
 
   await openApp(page);
-  await expect(page.locator(".section-title", { hasText: "Sat, Oct 10" })).toBeVisible();
-  const firstPage = await page.locator("a.meal-link").count();
-  expect(firstPage).toBeGreaterThanOrEqual(40);
-  await page.getByRole("button", { name: "Show older meals" }).click();
-  await expect(page.locator(".meal", { hasText: "seed 44" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Show older meals" })).toHaveCount(0);
+  const row = (label: string) => page.locator("li.day", { has: page.locator(".day-title strong", { hasText: label }) });
+  // Not analyzed: open, with its meal showing. Analyzed: closed, with the day's totals.
+  await expect(row("Sat, Oct 10").locator(".day-head")).toHaveAttribute("aria-expanded", "true");
+  await expect(row("Sat, Oct 10").locator(".meal", { hasText: "day 0" })).toHaveCount(1);
+  const oct9 = row("Fri, Oct 9");
+  await expect(oct9.locator(".day-head")).toHaveAttribute("aria-expanded", "false");
+  await expect(oct9.locator(".day-macros")).toContainText(/[\d,]+ kcal · P \d+ · C \d+ · F \d+/);
+  await expect(oct9.locator(".meal")).toHaveCount(0);
+  await expect(row("Yesterday").locator(".day-head")).toHaveAttribute("aria-expanded", "true");
+  await expect(row("Yesterday").locator(".meal", { hasText: "yesterday's lunch" })).toHaveCount(1);
 
-  await page.locator(".meal", { hasText: "seed 0" }).locator("a.meal-link").click();
-  await expect(page.locator(".detail h2")).toContainText("October 10");
-  await expect(page.locator(".detail-photos img")).toHaveCount(1);
+  await oct9.locator(".day-head").click();
+  await expect(oct9.locator(".meal", { hasText: "day 1" }).locator(".meal-analysis")).toContainText("kcal");
+  await oct9.locator(".day-head").click();
+  await expect(oct9.locator(".meal")).toHaveCount(0);
+
+  // 30 days at a time: the oldest arrive by scrolling down.
+  await expect(row("Sun, Sep 6")).toHaveCount(0);
+  await page.locator(".more").scrollIntoViewIfNeeded();
+  await expect(row("Sun, Sep 6")).toHaveCount(1);
+
+  // Open a meal, delete it, undo.
+  await oct9.locator(".day-head").click();
+  await oct9.locator(".meal", { hasText: "day 1" }).locator("a.meal-link").click();
+  await expect(page.locator(".detail h2")).toContainText("October 9");
   await page.getByRole("button", { name: "Delete meal" }).click();
-  await expect(page.locator(".toast")).toContainText("Deleted 08:00 breakfast");
+  await expect(page.locator(".toast")).toContainText("Deleted 13:00 lunch");
   await expect(page).toHaveURL(/#\/$/);
-  await expect(page.locator(".meal", { hasText: "seed 0" })).toHaveCount(0);
-
+  await expect(page.locator(".meal", { hasText: "day 1" })).toHaveCount(0);
   await page.locator(".toast").getByRole("button", { name: "Undo" }).click();
-  await expect(page.locator(".meal", { hasText: "seed 0" })).toHaveCount(1);
-  await page.getByRole("button", { name: "Recently deleted" }).click();
-  // Undone, so not listed (the list may not exist at all when nothing else is deleted).
-  await expect(page.locator(".meals.deleted", { hasText: "2026-10-10 19:00" })).toHaveCount(0);
+  await expect(row("Fri, Oct 9")).toHaveCount(1);
 });
 
 test("a deleted meal can be restored from Recently deleted", async ({ page, request }) => {

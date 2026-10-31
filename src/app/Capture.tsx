@@ -6,17 +6,8 @@ import { isStaleDraft } from "./lib/drafts";
 import { preparePhoto, sha256Hex } from "./lib/image";
 import { formatDuration, startRecording, type Recording } from "./lib/voice";
 import { showToast } from "./lib/notify";
-import { missedMealTime, timeOfDay } from "./lib/time";
+import { daysAgoOf, deviceTz, localIso, missedMealOnDay, missedMealTime, suggestMealType, timeOfDay } from "./lib/time";
 import { deleteMeal, getDraft, putMeal, sync, type OutboxMeal } from "./lib/outbox";
-import { deviceTz } from "./lib/time";
-
-function suggestMealType(iso: string): MealType {
-  const h = Number(iso.slice(11, 13)) + Number(iso.slice(14, 16)) / 60;
-  if (h >= 4 && h < 10.5) return "breakfast";
-  if (h >= 11 && h < 15) return "lunch";
-  if (h >= 17 && h < 22) return "dinner";
-  return "snack";
-}
 
 // The capture flow: tap → camera → draft (add more photos, meal type, note) → save.
 // The draft is written to the outbox on every change (marked draft, so it isn't
@@ -84,12 +75,13 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
   // A meal without a photo (D24), unless one is already being composed.
   const startMissed = async () => {
     if (await getDraft(userId)) return;
+    const takenAt = missedMealTime(localIso(new Date()), 0);
     await setDraft({
       id: ulid(),
       userId,
-      takenAt: missedMealTime(0, null),
+      takenAt,
       tz: deviceTz(),
-      mealType: null,
+      mealType: suggestMealType(takenAt),
       note: null,
       photos: [],
       createdAt: new Date().toISOString(),
@@ -112,9 +104,14 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
     if (draft) form.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [draft?.id]);
 
-  // A missed meal's time follows its day and meal type.
-  const setMissed = (daysAgo: number, mealType: MealType | null) =>
-    edit((d) => ({ ...d, mealType, missed: { daysAgo }, takenAt: missedMealTime(daysAgo, mealType) }));
+  // A missed meal's time, set by the day chips and the hour steps (D39). The meal type
+  // follows the time until the user picks one.
+  const setMissedTime = (time: (takenAt: string) => string) =>
+    edit((d) => {
+      const takenAt = time(d.takenAt);
+      const picked = d.missed?.typePicked;
+      return { ...d, takenAt, mealType: picked ? d.mealType : suggestMealType(takenAt), missed: { daysAgo: daysAgoOf(takenAt), typePicked: picked } };
+    });
 
   const urls = useMemo(() => draft?.photos.map((p) => URL.createObjectURL(p.display)) ?? [], [draft?.photos]);
   useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
@@ -170,7 +167,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
 
   // Without a photo, the description is the whole meal: it needs a voice note or a note,
   // and a meal type to place it in the day.
-  const missedIncomplete = !!draft && draft.photos.length === 0 && (!draft.mealType || (!draft.voice && !draft.note?.trim()));
+  const missedIncomplete = !!draft && draft.photos.length === 0 && !draft.voice && !draft.note?.trim();
 
   const save = async () => {
     if (!latest.current || missedIncomplete) return;
@@ -236,14 +233,15 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
                   <button
                     key={label}
                     role="radio"
-                    aria-checked={draft.missed!.daysAgo === daysAgo}
-                    class={"chip" + (draft.missed!.daysAgo === daysAgo ? " on" : "")}
-                    onClick={() => setMissed(daysAgo, latest.current?.mealType ?? null)}
+                    aria-checked={daysAgoOf(draft.takenAt) === daysAgo}
+                    class={"chip" + (daysAgoOf(draft.takenAt) === daysAgo ? " on" : "")}
+                    onClick={() => setMissedTime((t) => missedMealOnDay(t, daysAgo))}
                   >
                     {label}
                   </button>
                 ))}
               </div>
+              <MissedTime takenAt={draft.takenAt} onStep={(h) => setMissedTime((t) => missedMealTime(t, h))} />
             </>
           )}
           <div class="thumbs">
@@ -265,8 +263,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
                 onClick={() => {
                   const d = latest.current!;
                   const mealType = d.mealType === t ? null : t;
-                  if (d.missed && d.photos.length === 0) setMissed(d.missed.daysAgo, mealType);
-                  else edit((x) => ({ ...x, mealType }));
+                  edit((x) => ({ ...x, mealType, ...(x.missed ? { missed: { ...x.missed, typePicked: true } } : {}) }));
                 }}
               >
                 {t}
@@ -291,7 +288,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
             onError={setError}
             onRecordingChange={(on) => setBusy(on ? "Recording…" : null)}
           />
-          {missedIncomplete && <p class="muted small">To save it, pick a meal type and add a voice note or a note.</p>}
+          {missedIncomplete && <p class="muted small">To save it, add a voice note or a note.</p>}
         </section>
       )}
       {error && <p class="bad">{error}</p>}
@@ -384,5 +381,19 @@ function VoiceNote({
     <button class="voice" onClick={start}>
       🎙 Add a voice note (up to {formatDuration(MAX_VOICE_MS)})
     </button>
+  );
+}
+
+// When a missed meal was eaten: now, stepped back an hour at a time. "+1 h" shows once
+// there's room to step forward again (D39).
+function MissedTime({ takenAt, onStep }: { takenAt: string; onStep: (hours: number) => void }) {
+  const at = new Date(Date.parse(takenAt));
+  const canForward = Date.now() - at.getTime() >= 3_600_000;
+  return (
+    <div class="missed-time">
+      <button class="chip" aria-label="An hour earlier" onClick={() => onStep(-1)}>−1 h</button>
+      <strong aria-live="polite">{at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</strong>
+      {canForward && <button class="chip" aria-label="An hour later" onClick={() => onStep(1)}>+1 h</button>}
+    </div>
   );
 }
