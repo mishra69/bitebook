@@ -23,13 +23,15 @@ export type NewMeal = {
   meal_type: MealType | null;
   note: string | null;
   photos: NewPhoto[]; // empty for a meal added afterwards from a description (D24)
-  voice?: NewVoice; // uploaded beforehand, like the photos
+  voices?: NewVoice[]; // uploaded beforehand, like the photos, in the order recorded (D46)
+  voice?: Omit<NewVoice, "id" | "recorded_at">; // before D46: one note, filed under the meal's id
 };
 
-// A spoken note for the meal (D21), at most MAX_VOICE_MS long.
+// Spoken notes for the meal (D21): up to MAX_VOICES (D46), each at most MAX_VOICE_MS long.
 export const MAX_VOICE_MS = 60_000;
-export type NewVoice = { mime: string; bytes: number; sha256: string; duration_ms: number };
-export type VoiceNote = { duration_ms: number; transcript: string | null; transcript_model: string | null };
+export const MAX_VOICES = 5;
+export type NewVoice = { id: string; mime: string; bytes: number; sha256: string; duration_ms: number; recorded_at?: string };
+export type VoiceNote = { id: string; duration_ms: number; recorded_at: string | null; transcript: string | null; transcript_model: string | null };
 
 export type Meal = {
   id: string;
@@ -38,7 +40,7 @@ export type Meal = {
   meal_type: MealType | null;
   note: string | null;
   photos: { id: string; position: number; width: number | null; height: number | null; taken_at: string }[];
-  voice?: VoiceNote | null;
+  voices?: VoiceNote[]; // on the detail screen, in the order recorded
   has_voice?: boolean; // whether there's a voice note (in lists; its text is on the detail screen)
   analysis?: Analysis | null; // the latest non-skipped one, in lists
   analyses?: Analysis[]; // every one, newest first, on the detail screen
@@ -84,10 +86,11 @@ export function photoKey(userId: string, kind: "original" | "display", photoId: 
   return `users/${userId}/${kind === "original" ? "originals" : "display"}/${month}/${photoId}.${ext}`;
 }
 
-export function voiceKey(userId: string, mealId: string, takenAt: string, mime: string) {
+// A voice note's file is named by its own id; a note from before D46 has its meal's id.
+export function voiceKey(userId: string, voiceId: string, takenAt: string, mime: string) {
   const month = takenAt.slice(0, 4) + "/" + takenAt.slice(5, 7);
   const ext = mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac") ? "m4a" : mime.includes("webm") ? "webm" : mime.includes("ogg") ? "ogg" : "bin";
-  return `users/${userId}/voice/${month}/${mealId}.${ext}`;
+  return `users/${userId}/voice/${month}/${voiceId}.${ext}`;
 }
 
 function extFor(mime: string) {

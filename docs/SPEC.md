@@ -68,7 +68,7 @@ Laptop
 
 ## 3. Core flows
 
-> **Tier:** Core · **Verified:** 2026-10-31
+> **Tier:** Core · **Verified:** 2026-11-01
 
 **Capture.** Tap "Snap it" to open the camera, then take one or more photos. An
 optional note and meal type can be added. The device makes a display copy
@@ -83,9 +83,9 @@ phone from its first photo. If it's left open for 90 minutes after its last phot
 app saves it the next time it opens; the meal's times come from its photos, so a late save
 changes nothing (D19).
 
-A meal can have one **voice note** of up to a minute, recorded in the draft, for example to
-describe each helping before saving. The server transcribes it with Whisper (Workers
-AI), and the prompt carries the transcript. The transcript isn't editable: if it's often
+A meal can have up to five **voice notes** of up to a minute each, recorded in the draft
+before saving (D46), for example one per helping. The server transcribes it with Whisper (Workers
+AI), and the prompt carries the transcripts in the order recorded. The transcript isn't editable: if it's often
 wrong, the fix is a better transcriber, not hand-editing (D21).
 
 **A meal by voice, or one missed.** "Say it", next to Snap it, opens a draft without a
@@ -138,7 +138,7 @@ rows and files for good.
 
 ## 4. Data model (D1)
 
-> **Tier:** Contract · **Verified:** 2026-10-31 · **Expires:** 2027-04-30
+> **Tier:** Contract · **Verified:** 2026-11-01 · **Expires:** 2027-05-01
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
@@ -147,7 +147,8 @@ rows and files for good.
 > `diag_events` (0012, the phone's upload log, D23), `push_subscriptions` and
 > `reminders_sent` (0013, D25), the API path's `users.api_model`, batch cost columns,
 > open questions and `analysis_jobs` (0014, D28), `batches.request_params` (0015, D33),
-> `health_keys`, `health_runs` and `health_exports` (0016, D34); `users.picture_url` (0017, D41).
+> `health_keys`, `health_runs` and `health_exports` (0016, D34); `users.picture_url` (0017, D41);
+> `voice_notes` rebuilt with its own id and a position, up to five per meal (0018, D46).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -199,13 +200,14 @@ is derived, not stored.
 
 ## 5. Storage layout (R2)
 
-> **Tier:** Contract · **Verified:** 2026-10-24 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-11-01 · **Expires:** 2027-05-01
 >
 > Implemented in `photoKey()` in `src/shared/meals.ts`, which is authoritative.
 
 Layout: `users/<user_id>/originals/YYYY/MM/<photo_id>.<ext>`,
 `users/<user_id>/display/YYYY/MM/<photo_id>.jpg` and, for voice notes,
-`users/<user_id>/voice/YYYY/MM/<meal_id>.<m4a|webm>` (`voiceKey()`). Spoken answers and
+`users/<user_id>/voice/YYYY/MM/<voice_id>.<m4a|webm>` (`voiceKey()`; a note from before
+D46 has its meal's id). Spoken answers and
 corrections on the API path are kept as `users/<user_id>/voice/replies/<id>.<ext>`. Everything a user owns sits under
 their prefix, so one user's photos can be exported or deleted as a unit. The month
 comes from the meal's local `taken_at`, so roll-off can select by prefix.
@@ -219,7 +221,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 
 ## 6. Prompt and reply contract
 
-> **Tier:** Contract · **Verified:** 2026-10-24 · **Expires:** 2027-04-17
+> **Tier:** Contract · **Verified:** 2026-11-01 · **Expires:** 2027-05-01
 >
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
@@ -245,7 +247,9 @@ code can't say:
 - A voice note's transcript follows the meal's note, labelled as the user's own words,
   and the prompt says to trust it over the photos but allow for slips in food names. A
   transcription that failed is retried when the batch is created; if it still fails, the
-  prompt says a recording exists but couldn't be transcribed (D21).
+  prompt says a recording exists but couldn't be transcribed (D21). Several notes are
+  numbered with the time each was recorded, and the prompt says a later one can add a
+  helping or correct an earlier one (prompt/11, D46).
 - Questions happen in the chat, before the JSON (D18): at most 2, only when an answer would
   move an estimate by about 100 kcal or matter for future meals, and never one listed under
   "Questions already asked". The model folds the answers into its one reply; nothing is
@@ -316,6 +320,9 @@ Still to check, then delete this section:
 - **Reminders:** turn them on from the card on Meals (home-screen app only), then
   avatar → Settings → Reminders → "Send a test". Does it arrive, and does tapping it open
   Meals? Does the 10:30 pm one arrive on time?
+- **Several voice notes (D46):** record one, tap "Add another voice note", record again,
+  save. Do both play on the meal's page, in order, and does the estimate count a second
+  helping described in the second note?
 - **A meal by voice:** "Say it" (next to Snap it), speak, stop, save. Does the
   reply estimate it sensibly from the words alone?
 

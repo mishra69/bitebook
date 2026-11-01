@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { allSaved, captureMeal, openApp, serverMeal, sql } from "./helpers";
+import { createHash } from "node:crypto";
+import { allSaved, captureMeal, openApp, serverMeal, sql, ulid } from "./helpers";
 
 test("a meal uses its photo's EXIF time, survives a reload mid-draft, and uploads", async ({ page, request }) => {
   await openApp(page);
@@ -194,7 +195,7 @@ test("a draft still in progress stays open across a reload", async ({ page }) =>
   await expect(page.locator(".draft")).toHaveCount(0);
 });
 
-test("a voice note is recorded into the draft, survives a reload, uploads, and is transcribed", async ({ page, request }) => {
+test("voice notes are recorded into the draft, survive a reload, upload, and are transcribed in order", async ({ page, request }) => {
   await openApp(page);
   await page.getByRole("button", { name: "Snap it" }).click();
   await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
@@ -208,34 +209,81 @@ test("a voice note is recorded into the draft, survives a reload, uploads, and i
   await page.locator(".voice.recording").click();
   await expect(page.locator(".voice.saved")).toContainText(/Voice note · 0:0[23]/);
 
+  // A second one, like a second helping (D46).
+  await page.getByRole("button", { name: "Add another voice note" }).click();
+  await page.waitForTimeout(1300);
+  await page.locator(".voice.recording").click();
+  await expect(page.locator(".voice.saved")).toHaveCount(2);
+  await expect(page.locator(".voice.saved").nth(1)).toContainText("Voice note 2");
+
   await page.reload(); // stored on the phone, like the photos
-  await expect(page.locator(".voice.saved")).toContainText("Voice note");
+  await expect(page.locator(".voice.saved")).toHaveCount(2);
   await page.getByRole("button", { name: "Save meal" }).click();
   const saved = await serverMeal(request, "voice meal");
 
   // The server transcribes after saving (a stub in tests; Whisper in production).
   let meal: any;
   await expect
-    .poll(async () => ((meal = (await (await request.get(`/api/meals/${saved.id}`)).json()).meal), meal.voice?.transcript), { timeout: 15_000 })
+    .poll(async () => ((meal = (await (await request.get(`/api/meals/${saved.id}`)).json()).meal), meal.voices?.[1]?.transcript), { timeout: 15_000 })
     .toMatch(/^\(test transcript of \d+ bytes\)$/);
-  expect(meal.voice.duration_ms).toBeGreaterThan(1500);
-  expect(meal.voice.transcript_model).toBe("stub");
-  const audio = await request.get(`/api/meals/${saved.id}/voice`);
+  expect(meal.voices).toHaveLength(2);
+  expect(meal.voices[0].duration_ms).toBeGreaterThan(1500); // the longer one, recorded first
+  expect(meal.voices[0].duration_ms).toBeGreaterThan(meal.voices[1].duration_ms);
+  expect(meal.voices[0].transcript_model).toBe("stub");
+  expect(meal.voices[0].recorded_at < meal.voices[1].recorded_at).toBe(true);
+  const audio = await request.get(`/api/voice/${meal.voices[0].id}`);
   expect(audio.status()).toBe(200);
   expect(audio.headers()["content-type"]).toMatch(/^audio\//);
   const size = (await audio.body()).length;
   // iPhone Safari plays audio only from a server that answers Range requests.
-  const first = await request.get(`/api/meals/${saved.id}/voice`, { headers: { Range: "bytes=0-1" } });
+  const first = await request.get(`/api/voice/${meal.voices[0].id}`, { headers: { Range: "bytes=0-1" } });
   expect(first.status()).toBe(206);
   expect(first.headers()["content-range"]).toBe(`bytes 0-1/${size}`);
   expect((await first.body()).length).toBe(2);
-  const rest = await request.get(`/api/meals/${saved.id}/voice`, { headers: { Range: "bytes=2-" } });
+  const rest = await request.get(`/api/voice/${meal.voices[0].id}`, { headers: { Range: "bytes=2-" } });
   expect(rest.status()).toBe(206);
   expect((await rest.body()).length).toBe(size - 2);
 
   await page.goto(`/#/meal/${saved.id}`);
-  await expect(page.locator(".voice-detail")).toContainText("(test transcript of");
-  await expect(page.locator(".voice-detail audio")).toHaveCount(1);
+  await expect(page.locator(".voice-detail").first()).toContainText("(test transcript of");
+  await expect(page.locator(".voice-detail audio")).toHaveCount(2);
+  await expect(page.locator(".voice-detail").nth(1)).toContainText("Voice note 2");
+});
+
+test("a meal accepts at most five voice notes, and a phone on the old app can still send one", async ({ page, request }) => {
+  await openApp(page);
+  await page.getByRole("button", { name: "Say it" }).click();
+  for (let i = 0; i < 5; i++) {
+    if (i > 0) await page.getByRole("button", { name: "Add another voice note" }).click();
+    await expect(page.locator(".voice.recording")).toBeVisible();
+    await page.waitForTimeout(400);
+    await page.locator(".voice.recording").click();
+    await expect(page.locator(".voice.saved")).toHaveCount(i + 1);
+  }
+  await expect(page.getByRole("button", { name: /voice note/ })).toHaveCount(0); // no sixth
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Discard" }).click();
+
+  const v = (id: string) => ({ id, mime: "audio/mp4", bytes: 1000, sha256: "0".repeat(64), duration_ms: 1000 });
+  const ids = ["01M5H0000000000000000VCE01", "01M5H0000000000000000VCE02", "01M5H0000000000000000VCE03", "01M5H0000000000000000VCE04", "01M5H0000000000000000VCE05", "01M5H0000000000000000VCE06"];
+  const tooMany = await request.post("/api/meals", {
+    data: { id: "01M5H00000000000000000VCE9", taken_at: "2026-10-21T12:00:00-05:00", tz: "UTC", meal_type: null, note: "x", photos: [], voices: ids.map(v) },
+  });
+  expect((await tooMany.json()).detail).toBe("voices");
+
+  // Before D46 a phone sent one `voice`, uploaded under the meal's id: still accepted.
+  const audio = Buffer.from("not really audio, but bytes");
+  const sha = createHash("sha256").update(audio).digest("hex");
+  const mealId = ulid();
+  const at = "2026-10-12T19:00:00-05:00";
+  expect((await request.put(`/api/voice/${mealId}`, { headers: { "Content-Type": "audio/mp4", "X-Sha256": sha, "X-Taken-At": at }, data: audio })).status()).toBe(200);
+  const old = await request.post("/api/meals", {
+    data: { id: mealId, taken_at: at, tz: "UTC", meal_type: null, note: "old app voice", photos: [], voice: { mime: "audio/mp4", bytes: audio.length, sha256: sha, duration_ms: 1000 } },
+  });
+  expect(old.status()).toBe(201);
+  const { meal } = await (await request.get(`/api/meals/${mealId}`)).json();
+  expect(meal.voices.map((x: { id: string }) => x.id)).toEqual([mealId]);
+  await request.delete(`/api/meals/${mealId}`);
 });
 
 test("a voice note can be removed from the draft, and over-long ones are refused", async ({ page, request }) => {

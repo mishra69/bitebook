@@ -50,14 +50,18 @@ export function MealDetail({ id }: { id: string }) {
         ))}
       </div>
       {meal.note && <p class="meal-note">{meal.note}</p>}
-      {meal.voice && (
-        <div class="card voice-detail">
-          <audio controls src={`/api/meals/${meal.id}/voice`} preload="none" />
-          <p class={meal.voice.transcript ? "" : "muted"}>
-            {meal.voice.transcript ?? "Transcribing… (it'll be done by the time you analyze)"}
-          </p>
+      {(meal.voices ?? []).map((v, i, all) => (
+        <div key={v.id} class="card voice-detail">
+          {all.length > 1 && (
+            <p class="muted small">
+              Voice note {i + 1}
+              {v.recorded_at && ` · ${v.recorded_at.slice(11, 16)}`}
+            </p>
+          )}
+          <audio controls src={`/api/voice/${v.id}`} preload="none" />
+          <p class={v.transcript ? "" : "muted"}>{v.transcript ?? "Transcribing… (it'll be done by the time you analyze)"}</p>
         </div>
-      )}
+      ))}
       <h3 class="section-title">Analysis</h3>
       <ApiPanel meal={meal} onChanged={load} />
       {meal.analyses?.length ? meal.analyses.map((a) => <AnalysisCard key={a.id} a={a} />) : <p class="muted">Not analyzed yet.</p>}

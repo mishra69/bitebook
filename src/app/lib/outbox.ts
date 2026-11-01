@@ -21,7 +21,9 @@ export type OutboxPhoto = {
   addedAt?: number; // when it was added to the draft (epoch ms), for auto-saving idle drafts
 };
 
-export type OutboxVoice = { blob: Blob; mime: string; sha256: string; durationMs: number; uploaded: boolean };
+// id: the note's own (D46); recordedAt: when it was recorded. A note from before D46 is
+// read back with its meal's id, the name it was always uploaded under.
+export type OutboxVoice = { id: string; blob: Blob; mime: string; sha256: string; durationMs: number; recordedAt?: string; uploaded: boolean };
 
 export type OutboxMeal = {
   id: string;
@@ -33,7 +35,7 @@ export type OutboxMeal = {
   photos: OutboxPhoto[];
   createdAt: string;
   savedAt?: number; // when Save was tapped (epoch ms), to time the whole upload
-  voice?: OutboxVoice; // one spoken note per meal (D21)
+  voices?: OutboxVoice[]; // spoken notes, in the order recorded (D21, D46)
   error?: string; // set when the server rejected it; it then waits for the user
   // Added afterwards without a photo (D24): its takenAt is the time the user set (D39).
   // typePicked: the user chose or cleared the meal type, so moving the time won't re-suggest it.
@@ -73,7 +75,11 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
 // can go unreadable while the page lives on: its thumbnail shows a broken image and its
 // upload hangs with no bytes sent, until a reload. A Blob made from bytes in memory can't.
 type Bytes<T> = { [K in keyof T]: T[K] extends Blob ? ArrayBuffer | Blob : T[K] };
-type StoredMeal = Omit<OutboxMeal, "photos" | "voice"> & { photos: Bytes<OutboxPhoto>[]; voice?: Bytes<OutboxVoice> };
+type StoredMeal = Omit<OutboxMeal, "photos" | "voices"> & {
+  photos: Bytes<OutboxPhoto>[];
+  voices?: Bytes<OutboxVoice>[];
+  voice?: Omit<Bytes<OutboxVoice>, "id">; // stored before D46
+};
 
 const toBytes = (b: Blob) => b.arrayBuffer();
 async function toBlob(v: ArrayBuffer | Blob, type: string, meal: string): Promise<Blob> {
@@ -91,17 +97,19 @@ async function store(m: OutboxMeal): Promise<StoredMeal> {
   return {
     ...m,
     photos: await Promise.all(m.photos.map(async (p) => ({ ...p, original: await toBytes(p.original), display: await toBytes(p.display) }))),
-    voice: m.voice && { ...m.voice, blob: await toBytes(m.voice.blob) },
+    voices: m.voices && (await Promise.all(m.voices.map(async (v) => ({ ...v, blob: await toBytes(v.blob) })))),
   };
 }
 
-async function load(m: StoredMeal): Promise<OutboxMeal> {
+async function load({ voice, ...m }: StoredMeal): Promise<OutboxMeal> {
   return {
     ...m,
     photos: await Promise.all(
       m.photos.map(async (p) => ({ ...p, original: await toBlob(p.original, p.mime, m.id), display: await toBlob(p.display, "image/jpeg", m.id) })),
     ),
-    voice: m.voice && { ...m.voice, blob: await toBlob(m.voice.blob, m.voice.mime, m.id) },
+    voices: await Promise.all(
+      (m.voices ?? (voice ? [{ id: m.id, ...voice }] : [])).map(async (v) => ({ ...v, blob: await toBlob(v.blob, v.mime, m.id) })),
+    ),
   };
 }
 
@@ -255,20 +263,22 @@ export async function retryMeal(meal: OutboxMeal) {
 
 async function uploadMeal(meal: OutboxMeal) {
   // Display copies first: they're small, so a short stay in the app still gets them done.
-  const voiceSize = meal.voice?.blob.size ?? 0;
-  const total = meal.photos.reduce((n, p) => n + p.original.size + p.display.size, 0) + voiceSize;
+  const voices = meal.voices ?? [];
+  const voiceSize = (uploadedOnly: boolean) => voices.reduce((n, v) => n + (!uploadedOnly || v.uploaded ? v.blob.size : 0), 0);
+  const total = meal.photos.reduce((n, p) => n + p.original.size + p.display.size, 0) + voiceSize(false);
   let sent =
     meal.photos.reduce((n, p) => n + (p.uploaded.original ? p.original.size : 0) + (p.uploaded.display ? p.display.size : 0), 0) +
-    (meal.voice?.uploaded ? voiceSize : 0);
+    voiceSize(true);
   changed({ progress: { sent, total } });
-  if (meal.voice && !meal.voice.uploaded) {
-    await request(`/api/voice/${meal.id}`, {
+  for (const v of voices) {
+    if (v.uploaded) continue;
+    await request(`/api/voice/${v.id}`, {
       method: "PUT",
-      headers: { "Content-Type": meal.voice.mime, "X-Sha256": meal.voice.sha256, "X-Taken-At": meal.takenAt },
-      body: meal.voice.blob,
+      headers: { "Content-Type": v.mime, "X-Sha256": v.sha256, "X-Taken-At": meal.takenAt },
+      body: v.blob,
     });
-    meal.voice.uploaded = true;
-    sent += voiceSize;
+    v.uploaded = true;
+    sent += v.blob.size;
     changed({ progress: { sent, total } });
     await ensureQueued(meal.id);
     await putMeal(meal);
@@ -311,9 +321,7 @@ async function uploadMeal(meal: OutboxMeal) {
       height: p.height,
       taken_at: p.takenAt,
     })),
-    voice: meal.voice
-      ? { mime: meal.voice.mime, bytes: meal.voice.blob.size, sha256: meal.voice.sha256, duration_ms: meal.voice.durationMs }
-      : undefined,
+    voices: voices.map((v) => ({ id: v.id, mime: v.mime, bytes: v.blob.size, sha256: v.sha256, duration_ms: v.durationMs, recorded_at: v.recordedAt })),
   };
   await ensureQueued(meal.id);
   try {
@@ -322,7 +330,7 @@ async function uploadMeal(meal: OutboxMeal) {
     // The server doesn't have every file as described: upload them all again next pass.
     if (!(e instanceof Rejected) || e.message !== "files_missing") throw e;
     for (const p of meal.photos) p.uploaded = { original: false, display: false };
-    if (meal.voice) meal.voice.uploaded = false;
+    for (const v of voices) v.uploaded = false;
     await putMeal(meal);
     throw new Error("files_missing");
   }

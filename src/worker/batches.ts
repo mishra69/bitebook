@@ -15,7 +15,7 @@ import {
   type RememberedFood,
 } from "../shared/prompt";
 import { extractJson, validateReply } from "../shared/reply";
-import { transcribe } from "./transcribe";
+import { transcribeMeal } from "./transcribe";
 import { isUlid, ulid } from "../shared/ulid";
 
 // Most chat apps take up to 20 attachments in one message. Verify on the phone (SPEC §12).
@@ -85,13 +85,11 @@ export async function buildBatch(
   opts: { channel: "chat" | "api"; revision?: PromptInput["revision"] },
 ): Promise<string> {
   // Voice notes: retry any transcription that hasn't succeeded yet, then use the text.
-  const { results: voiceRows } = await env.DB.prepare(
-    "SELECT meal_id, transcript FROM voice_notes WHERE user_id = ?1 AND meal_id IN (SELECT value FROM json_each(?2))",
-  )
-    .bind(userId, JSON.stringify(meals.map((m) => m.id)))
-    .all<{ meal_id: string; transcript: string | null }>();
-  const voice = new Map<string, string | null>();
-  for (const v of voiceRows) voice.set(v.meal_id, v.transcript ?? (await transcribe(env, userId, v.meal_id)));
+  const voices = new Map<string, { recorded_at: string | null; transcript: string | null }[]>();
+  for (const m of meals) {
+    const v = await transcribeMeal(env, userId, m.id);
+    if (v.length) voices.set(m.id, v);
+  }
 
   const [notes, foods, digest, asked] = await Promise.all([
     env.DB.prepare("SELECT body FROM notes WHERE user_id = ?1 ORDER BY created_at").bind(userId).all<{ body: string }>(),
@@ -119,7 +117,7 @@ export async function buildBatch(
     digest,
     trend: computeTrend(digest, Date.now()),
     asked: asked.results,
-    meals: meals.map((m, i) => ({ key: batchKey(i), ...m, voice: voice.has(m.id) ? { transcript: voice.get(m.id) ?? null } : null })),
+    meals: meals.map((m, i) => ({ key: batchKey(i), ...m, voices: voices.get(m.id) ?? [] })),
   });
   await env.DB.prepare(
     `INSERT INTO batches (id, user_id, created_at, prompt_version, prompt_text, key_map, active_codes, channel)

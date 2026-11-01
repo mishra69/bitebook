@@ -40,7 +40,7 @@ test("with automatic analysis on, a new meal is analyzed by the user's clock and
   expect(meal.analyses[0]).toMatchObject({ description: "stub estimate", kcal: 500, fiber_g: 6, model: "anthropic/claude-opus-5.5 (stub)" });
   expect(meal.api.job.status).toBe("done");
   const [batch] = sql(`SELECT channel, prompt_version, cost_usd, input_tokens, request_params FROM batches WHERE id = (SELECT batch_id FROM analyses WHERE meal_id = '${id}')`);
-  expect({ ...batch, request_params: undefined }).toEqual({ channel: "api", prompt_version: "prompt/10", cost_usd: 0.01, input_tokens: 1000, request_params: undefined });
+  expect({ ...batch, request_params: undefined }).toEqual({ channel: "api", prompt_version: "prompt/11", cost_usd: 0.01, input_tokens: 1000, request_params: undefined });
   // How the run was made, recorded with it (D33).
   expect(JSON.parse(batch.request_params as string)).toMatchObject({
     provider: "openrouter",

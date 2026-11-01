@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ulid } from "../shared/ulid";
-import { MAX_VOICE_MS, MEAL_TYPES, type MealType } from "../shared/meals";
+import { MAX_VOICE_MS, MAX_VOICES, MEAL_TYPES, type MealType } from "../shared/meals";
 import { CameraIcon, MicIcon } from "./Icons";
 import { diag } from "./lib/diag";
 import { isStaleDraft } from "./lib/drafts";
@@ -8,7 +8,7 @@ import { preparePhoto, sha256Hex } from "./lib/image";
 import { formatDuration, startRecording, type Recording } from "./lib/voice";
 import { showToast } from "./lib/notify";
 import { daysAgoOf, deviceTz, localIso, missedMealOnDay, missedMealTime, suggestMealType, timeOfDay } from "./lib/time";
-import { deleteMeal, getDraft, putMeal, sync, type OutboxMeal } from "./lib/outbox";
+import { deleteMeal, getDraft, putMeal, sync, type OutboxMeal, type OutboxVoice } from "./lib/outbox";
 
 // The capture flow: tap → camera → draft (add more photos, meal type, note) → save.
 // The draft is written to the outbox on every change (marked draft, so it isn't
@@ -171,7 +171,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
 
   // Without a photo, the description is the whole meal: it needs a voice note or a note,
   // and a meal type to place it in the day.
-  const missedIncomplete = !!draft && draft.photos.length === 0 && !draft.voice && !draft.note?.trim();
+  const missedIncomplete = !!draft && draft.photos.length === 0 && !draft.voices?.length && !draft.note?.trim();
 
   const save = async () => {
     if (!latest.current || missedIncomplete) return;
@@ -181,7 +181,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
       await writes.current; // a draft write landing after this would turn the meal back into a draft
       const d = latest.current;
       await putMeal({ ...d, note: d.note?.trim() || null, draft: false, savedAt: Date.now() });
-      diag("saved", { meal: d.id, photos: d.photos.length, voice: !!d.voice });
+      diag("saved", { meal: d.id, photos: d.photos.length, voice: d.voices?.length ?? 0 });
       show(null);
       // Ask iOS not to evict the outbox under storage pressure. Best effort.
       navigator.storage?.persist?.().catch(() => {});
@@ -195,7 +195,7 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
 
   const discard = async () => {
     const d = latest.current;
-    if (d && (d.photos.length > 0 || d.voice) && !confirm("Discard this meal?")) return;
+    if (d && (d.photos.length > 0 || d.voices?.length) && !confirm("Discard this meal?")) return;
     clearTimeout(noteTimer.current);
     await writes.current;
     if (d) await deleteMeal(d.id);
@@ -282,16 +282,17 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
             value={draft.note ?? ""}
             onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
           />
-          <VoiceNote
+          <VoiceNotes
             key={draft.id}
             draft={draft}
             autoStart={autoRecord}
             onAutoStarted={() => setAutoRecord(false)}
             onRecorded={async (r) => {
               const sha256 = await sha256Hex(await r.blob.arrayBuffer());
-              await edit((d) => ({ ...d, voice: { blob: r.blob, mime: r.mime, sha256, durationMs: r.durationMs, uploaded: false } }));
+              const v = { id: ulid(), blob: r.blob, mime: r.mime, sha256, durationMs: r.durationMs, recordedAt: localIso(new Date(r.startedAt)), uploaded: false };
+              await edit((d) => ({ ...d, voices: [...(d.voices ?? []), v].slice(0, MAX_VOICES) }));
             }}
-            onRemove={() => edit((d) => ({ ...d, voice: undefined }))}
+            onRemove={(id) => edit((d) => ({ ...d, voices: (d.voices ?? []).filter((v) => v.id !== id) }))}
             onError={setError}
             onRecordingChange={(on) => setBusy(on ? "Recording…" : null)}
           />
@@ -322,9 +323,9 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
   );
 }
 
-// One spoken note per meal, up to MAX_VOICE_MS (D21). It's stored in the draft like the
-// photos, uploaded with the meal, and transcribed on the server; the text isn't editable.
-function VoiceNote({
+// Spoken notes for the meal, up to MAX_VOICES of MAX_VOICE_MS each (D21, D46). They're kept in
+// the draft like photos and uploaded with the meal; "Add another" records the next one.
+function VoiceNotes({
   draft,
   autoStart,
   onAutoStarted,
@@ -336,27 +337,26 @@ function VoiceNote({
   draft: OutboxMeal;
   autoStart: boolean;
   onAutoStarted: () => void;
-  onRecorded: (r: Recording) => Promise<void>;
-  onRemove: () => void;
+  onRecorded: (r: Recording & { startedAt: number }) => Promise<void>;
+  onRemove: (id: string) => void;
   onError: (msg: string | null) => void;
   onRecordingChange: (recording: boolean) => void;
 }) {
   const [rec, setRec] = useState<{ stop: () => Promise<Recording>; started: number } | null>(null);
   const [now, setNow] = useState(Date.now());
-  const url = useMemo(() => (draft.voice ? URL.createObjectURL(draft.voice.blob) : null), [draft.voice?.blob]);
-  useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
+  const voices = draft.voices ?? [];
 
-  const finish = async (r: Recording) => {
+  const finish = async (r: Recording, startedAt: number) => {
     setRec(null);
     onRecordingChange(false);
-    if (r.blob.size > 0) await onRecorded(r);
+    if (r.blob.size > 0) await onRecorded({ ...r, startedAt });
   };
 
   useEffect(() => {
     if (!rec) return;
     const tick = setInterval(() => setNow(Date.now()), 250);
     // Leaving the app ends the recording (iOS would freeze it anyway); keep what was said.
-    const onHidden = () => document.visibilityState === "hidden" && rec.stop().then(finish);
+    const onHidden = () => document.visibilityState === "hidden" && rec.stop().then((r) => finish(r, rec.started));
     document.addEventListener("visibilitychange", onHidden);
     return () => {
       clearInterval(tick);
@@ -367,7 +367,9 @@ function VoiceNote({
   const start = async () => {
     onError(null);
     try {
-      const r = await startRecording(MAX_VOICE_MS, finish);
+      const started = { at: 0 };
+      const r = await startRecording(MAX_VOICE_MS, (x) => finish(x, started.at));
+      started.at = r.started;
       setNow(Date.now());
       setRec(r);
       onRecordingChange(true);
@@ -380,29 +382,40 @@ function VoiceNote({
   useEffect(() => {
     if (!autoStart) return;
     onAutoStarted();
-    if (!draft.voice) start();
+    if (voices.length === 0) start();
   }, [autoStart]);
 
-  if (rec) {
-    return (
-      <button class="voice recording" onClick={() => rec.stop().then(finish)}>
-        ● Recording {formatDuration(now - rec.started)} / {formatDuration(MAX_VOICE_MS)} · tap to stop
-      </button>
-    );
-  }
-  if (draft.voice && url) {
-    return (
-      <div class="voice saved">
-        <span><MicIcon /> Voice note · {formatDuration(draft.voice.durationMs)}</span>
-        <audio controls src={url} preload="metadata" />
-        <button class="link" onClick={onRemove}>Remove</button>
-      </div>
-    );
-  }
   return (
-    <button class="voice" onClick={start}>
-      <MicIcon /> Add a voice note (up to {formatDuration(MAX_VOICE_MS)})
-    </button>
+    <div class="voices">
+      {voices.map((v, i) => (
+        <SavedVoice key={v.id} voice={v} label={voices.length > 1 ? `Voice note ${i + 1}` : "Voice note"} onRemove={() => onRemove(v.id)} />
+      ))}
+      {rec ? (
+        <button class="voice recording" onClick={() => rec.stop().then((r) => finish(r, rec.started))}>
+          ● Recording {formatDuration(now - rec.started)} / {formatDuration(MAX_VOICE_MS)} · tap to stop
+        </button>
+      ) : (
+        voices.length < MAX_VOICES && (
+          <button class="voice" onClick={start}>
+            <MicIcon /> {voices.length ? "Add another voice note" : `Add a voice note (up to ${formatDuration(MAX_VOICE_MS)})`}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+function SavedVoice({ voice, label, onRemove }: { voice: OutboxVoice; label: string; onRemove: () => void }) {
+  const url = useMemo(() => URL.createObjectURL(voice.blob), [voice.blob]);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  return (
+    <div class="voice saved">
+      <span>
+        <MicIcon /> {label} · {formatDuration(voice.durationMs)}
+      </span>
+      <audio controls src={url} preload="metadata" />
+      <button class="link" onClick={onRemove}>Remove</button>
+    </div>
   );
 }
 

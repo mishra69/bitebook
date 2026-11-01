@@ -674,3 +674,21 @@ transcript.
 
 Supersedes D44's page icon, at the user's request: a meal with neither photo nor voice note
 shows no tile at all, just its estimate and note. The mic tile stays for voice notes.
+
+## D46 · 2026-11-01 · Up to five voice notes per meal
+
+Supersedes D21's one voice note per meal. Meals stay open for helpings (D19), and a second
+helping or a forgotten detail is easier to say as another short note than to re-record.
+
+- **In the draft only, like photos:** "Add another voice note" under the first, up to five,
+  each up to a minute, each with its own player and Remove. A saved meal doesn't take more
+  (that would mean re-analyzing it); "Correct this" is the way to add to one.
+- **Storage:** `voice_notes` is keyed by the note's own id, with a position and the time it
+  was recorded (migration 0018). The file in R2 is named by that id. The 34 notes from
+  before keep their meal's id as their own, which is also their file's name, so nothing
+  moved. Playback is `GET /api/voice/:id`.
+- **Upload:** each note is PUT on its own, then listed in the meal's commit (`voices`). A
+  phone still on the old app sends one `voice` under the meal's id, which is still accepted.
+- **Prompt (prompt/11):** one note reads exactly as before. Several are numbered in the order
+  recorded, with the time of each, and the prompt says a later one can add a helping or
+  correct an earlier one, so the same food isn't counted twice.

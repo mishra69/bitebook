@@ -13,7 +13,8 @@ import type { MealType } from "./meals";
 // prompt/9 (2026-10-23): a readable copy of the whole reply before the JSON block (D26).
 // prompt/10 (2026-10-24): an API variant (D28): no chat, so questions go in the reply and
 // are answered in the app; a revision carries the earlier estimate and the user's words.
-export const PROMPT_VERSION = "prompt/10";
+// prompt/11 (2026-11-01): up to five voice notes per meal, in order with their times (D46).
+export const PROMPT_VERSION = "prompt/11";
 export const MAX_QUESTIONS = 2;
 export const ASKED_MAX_LINES = 60;
 export const REPLY_SCHEMA = "bitebook.reply/1";
@@ -53,8 +54,21 @@ export type PromptMeal = {
   meal_type: MealType | null;
   note: string | null;
   photos: { position: number; taken_at: string }[];
-  voice?: { transcript: string | null } | null; // null transcript: recorded but not transcribed
+  // In the order recorded; null transcript: recorded but not transcribed. recorded_at is
+  // missing for notes from before D46.
+  voices?: { recorded_at: string | null; transcript: string | null }[];
 };
+
+const UNTRANSCRIBED = "(recorded, but it couldn't be transcribed)";
+// One voice note reads as before D46; several are numbered, with the time each was recorded.
+function voiceLines(voices: NonNullable<PromptMeal["voices"]>): string {
+  if (voices.length === 0) return "";
+  if (voices.length === 1) return `\nVoice note (my words, transcribed): ${voices[0].transcript?.trim() || UNTRANSCRIBED}`;
+  return (
+    "\nVoice notes (my words, transcribed, in the order recorded):" +
+    voices.map((v, i) => `\n${i + 1}.${v.recorded_at ? ` (${v.recorded_at.slice(11, 16)})` : ""} ${v.transcript?.trim() || UNTRANSCRIBED}`).join("")
+  );
+}
 
 // A, B, …, Z, AA, AB, …: short keys a model is unlikely to garble.
 export function batchKey(i: number): string {
@@ -186,7 +200,7 @@ export function buildPrompt(p: PromptInput): string {
       return (
         `[${m.key}] ${weekday(m.taken_at)} ${m.taken_at.slice(0, 10)} ${time} · ${m.meal_type ?? "meal"}` +
         ` · ${files.length ? `photos: ${files.join(", ")}` : "no photo (added afterwards from my description)"}\nNote: ${m.note?.trim() || "—"}` +
-        (m.voice ? `\nVoice note (my words, transcribed): ${m.voice.transcript?.trim() || "(recorded, but it couldn't be transcribed)"}` : "")
+        voiceLines(m.voices ?? [])
       );
     })
     .join("\n");
@@ -223,6 +237,8 @@ ${api ? API_QUESTIONS : CHAT_QUESTIONS}
    unusable, set skipped to true and say why in skip_reason.
    A voice note is me describing the meal in my own words (it may describe each photo):
    trust it over what the photos suggest, but allow for transcription slips in food names.
+   Several voice notes are in the order I recorded them: a later one can add a helping or
+   correct an earlier one, so don't count the same food twice.
    A meal's photos can be separate helpings. Photos taken several minutes apart are
    additional servings: count what's on each one, and mention the number of helpings in
    the description. Photos within a minute or so of each other are usually the same

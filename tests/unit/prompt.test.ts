@@ -104,22 +104,34 @@ describe("questions already asked (prompt/4)", () => {
   });
 });
 
-describe("voice notes (prompt/6)", () => {
-  const meal = (voice: { transcript: string | null } | null) => ({
+describe("voice notes (prompt/6, prompt/11)", () => {
+  type V = { recorded_at: string | null; transcript: string | null };
+  const meal = (voices: V[]) => ({
     key: "A", taken_at: "2026-10-21T19:30:00-05:00", meal_type: "dinner" as const, note: null,
-    photos: [{ position: 0, taken_at: "2026-10-21T19:30:00-05:00" }], voice,
+    photos: [{ position: 0, taken_at: "2026-10-21T19:30:00-05:00" }], voices,
   });
-  const build = (voice: { transcript: string | null } | null) =>
-    buildPrompt({ batchId: "01B", notes: [], foods: [], digest: [], asked: [], trend: { days: 0, kcal: null, protein_g: null, fiber_g: null }, meals: [meal(voice)] });
+  const build = (voices: V[]) =>
+    buildPrompt({ batchId: "01B", notes: [], foods: [], digest: [], asked: [], trend: { days: 0, kcal: null, protein_g: null, fiber_g: null }, meals: [meal(voices)] });
 
   it("adds the transcript under the meal's note, and says how to weigh it", () => {
-    const p = build({ transcript: "  First plate was dal and two rotis, second plate just rice.  " });
+    const p = build([{ recorded_at: null, transcript: "  First plate was dal and two rotis, second plate just rice.  " }]);
     expect(p).toContain("Note: —\nVoice note (my words, transcribed): First plate was dal and two rotis, second plate just rice.\n");
     expect(p).toContain("trust it over what the photos suggest");
   });
   it("says so when a recording couldn't be transcribed, and adds nothing without one", () => {
-    expect(build({ transcript: null })).toContain("Voice note (my words, transcribed): (recorded, but it couldn't be transcribed)");
-    expect(build(null)).not.toContain("Voice note (my words");
+    expect(build([{ recorded_at: null, transcript: null }])).toContain("Voice note (my words, transcribed): (recorded, but it couldn't be transcribed)");
+    expect(build([])).not.toContain("Voice note (my words");
+  });
+  it("numbers several notes in the order recorded, with their times (D46)", () => {
+    const p = build([
+      { recorded_at: "2026-10-21T19:31:10-05:00", transcript: "dal and two rotis" },
+      { recorded_at: "2026-10-21T19:52:00-05:00", transcript: "another half bowl of dal" },
+      { recorded_at: null, transcript: null },
+    ]);
+    expect(p).toContain(
+      "Note: —\nVoice notes (my words, transcribed, in the order recorded):\n1. (19:31) dal and two rotis\n2. (19:52) another half bowl of dal\n3. (recorded, but it couldn't be transcribed)",
+    );
+    expect(p).toContain("a later one can add a helping or\n   correct an earlier one");
   });
 });
 
@@ -157,7 +169,7 @@ describe("meals without a photo (prompt/8)", () => {
   it("marks the meal and its approximate time, and says how to estimate it", () => {
     const p = buildPrompt({
       batchId: "01B", notes: [], foods: [], digest: [], asked: [], trend: { days: 0, kcal: null, protein_g: null, fiber_g: null },
-      meals: [{ key: "A", taken_at: "2026-10-22T13:00:00-05:00", meal_type: "lunch", note: null, photos: [], voice: { transcript: "two rotis and dal" } }],
+      meals: [{ key: "A", taken_at: "2026-10-22T13:00:00-05:00", meal_type: "lunch", note: null, photos: [], voices: [{ recorded_at: null, transcript: "two rotis and dal" }] }],
     });
     expect(p).toContain("[A] Thu 2026-10-22 ~13:00 · lunch · no photo (added afterwards from my description)\nNote: —\nVoice note (my words, transcribed): two rotis and dal");
     expect(p).toContain("A meal with no photo is one I forgot to photograph");

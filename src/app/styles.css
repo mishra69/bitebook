@@ -283,3 +283,4 @@ ul { margin: 0; padding-left: 1.2rem; }
 .signin p { margin: 0; max-width: 18rem; }
 .signin-icon { border-radius: 22%; box-shadow: 0 6px 24px rgb(0 0 0 / 0.12); }
 .signin-button { min-height: 44px; margin-top: 1rem; }
+.voices { display: grid; gap: 0.5rem; }

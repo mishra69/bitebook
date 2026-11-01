@@ -68,7 +68,7 @@ export function MealRow({ row }: { row: Row }) {
         {urls.map((u) => (
           <img key={u} class="thumb" src={u} alt="" loading="lazy" />
         ))}
-        {urls.length === 0 && <NoPhoto voice={row.kind === "local" ? !!row.meal.voice : !!row.meal.has_voice} />}
+        {urls.length === 0 && <NoPhoto voice={row.kind === "local" ? !!row.meal.voices?.length : !!row.meal.has_voice} />}
       </div>
       {row.kind === "server" && row.meal.analysis && (
         <p class="meal-analysis">

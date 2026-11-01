@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { isUlid } from "../shared/ulid";
-import { MAX_VOICE_MS, MEAL_TYPES, photoKey, voiceKey, type Analysis, type DeletedMeal, type Meal, type NewMeal, type VoiceNote } from "../shared/meals";
-import { transcribe } from "./transcribe";
+import { MAX_VOICE_MS, MAX_VOICES, MEAL_TYPES, photoKey, voiceKey, type Analysis, type DeletedMeal, type Meal, type NewMeal, type NewVoice, type VoiceNote } from "../shared/meals";
+import { transcribeMeal } from "./transcribe";
 import { PURGE_AFTER_DAYS } from "./purge";
 import { analysisState, enqueue } from "./analyze";
 
@@ -50,22 +50,23 @@ meals.put("/photos/:id/:kind{original|display}", async (c) => {
   return c.json({ ok: true });
 });
 
-// PUT /api/voice/:mealId — the meal's voice note (D21), uploaded before the meal commit, like
-// photos. Headers: Content-Type (audio/*), X-Sha256, X-Taken-At (the meal's).
-meals.put("/voice/:mealId", async (c) => {
+// PUT /api/voice/:id — one of the meal's voice notes (D21, D46), uploaded before the meal
+// commit, like photos. Headers: Content-Type (audio/*), X-Sha256, X-Taken-At (the meal's).
+// Before D46 the id was the meal's, which still works: it's just the note's id.
+meals.put("/voice/:id", async (c) => {
   const user = c.get("user");
-  const mealId = c.req.param("mealId");
+  const voiceId = c.req.param("id");
   const sha = c.req.header("X-Sha256");
   const takenAt = c.req.header("X-Taken-At");
   const mime = (c.req.header("Content-Type") ?? "").split(";")[0].trim().toLowerCase();
-  if (!isUlid(mealId) || !isSha(sha) || !isIsoWithOffset(takenAt)) return c.json({ error: "bad_request" }, 400);
+  if (!isUlid(voiceId) || !isSha(sha) || !isIsoWithOffset(takenAt)) return c.json({ error: "bad_request" }, 400);
   if (!mime.startsWith("audio/")) return c.json({ error: "bad_type" }, 415);
-  const existing = await c.env.DB.prepare("SELECT 1 FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2").bind(mealId, user.id).first();
+  const existing = await c.env.DB.prepare("SELECT 1 FROM voice_notes WHERE id = ?1 AND user_id = ?2").bind(voiceId, user.id).first();
   if (existing) return c.json({ ok: true, already: true });
   const body = await c.req.arrayBuffer();
   if (body.byteLength === 0 || body.byteLength > MAX_VOICE_BYTES) return c.json({ error: "bad_size" }, 413);
   if (hex(await crypto.subtle.digest("SHA-256", body)) !== sha) return c.json({ error: "checksum_mismatch" }, 422);
-  await c.env.PHOTOS.put(voiceKey(user.id, mealId, takenAt, mime), body, { sha256: sha, httpMetadata: { contentType: mime } });
+  await c.env.PHOTOS.put(voiceKey(user.id, voiceId, takenAt, mime), body, { sha256: sha, httpMetadata: { contentType: mime } });
   return c.json({ ok: true });
 });
 
@@ -92,11 +93,14 @@ meals.post("/meals", async (c) => {
       return { ...p, originalKey, displayKey };
     }),
   );
-  const voiceKeyFor = meal.voice ? voiceKey(user.id, meal.id, meal.taken_at, meal.voice.mime) : null;
-  if (meal.voice && voiceKeyFor) {
-    const v = await c.env.PHOTOS.head(voiceKeyFor);
-    if (!v || v.size !== meal.voice.bytes || !v.checksums.sha256 || hex(v.checksums.sha256) !== meal.voice.sha256) missing.push("voice");
-  }
+  const voices = await Promise.all(
+    voicesOf(meal).map(async (v) => {
+      const key = voiceKey(user.id, v.id, meal.taken_at, v.mime);
+      const o = await c.env.PHOTOS.head(key);
+      if (!o || o.size !== v.bytes || !o.checksums.sha256 || hex(o.checksums.sha256) !== v.sha256) missing.push(`voice/${v.id}`);
+      return { ...v, key };
+    }),
+  );
   if (missing.length) return c.json({ error: "files_missing", missing }, 409);
 
   const now = new Date().toISOString();
@@ -112,20 +116,18 @@ meals.post("/meals", async (c) => {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
       ).bind(p.id, user.id, meal.id, p.position, p.originalKey, p.mime, p.bytes, p.sha256, p.displayKey, p.display_bytes, p.width, p.height, p.taken_at ?? meal.taken_at),
     ),
-    ...(meal.voice
-      ? [
-          c.env.DB.prepare(
-            `INSERT INTO voice_notes (meal_id, user_id, r2_key, mime, bytes, sha256, duration_ms, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-          ).bind(meal.id, user.id, voiceKeyFor, meal.voice.mime, meal.voice.bytes, meal.voice.sha256, meal.voice.duration_ms, now),
-        ]
-      : []),
+    ...voices.map((v, i) =>
+      c.env.DB.prepare(
+        `INSERT INTO voice_notes (id, meal_id, user_id, position, r2_key, mime, bytes, sha256, duration_ms, recorded_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+      ).bind(v.id, meal.id, user.id, i, v.key, v.mime, v.bytes, v.sha256, v.duration_ms, v.recorded_at ?? null, now),
+    ),
   ]);
   // Transcribe after answering: the meal is saved either way, and export retries if needed.
-  if (meal.voice) c.executionCtx.waitUntil(transcribe(c.env, user.id, meal.id));
+  if (voices.length) c.executionCtx.waitUntil(transcribeMeal(c.env, user.id, meal.id));
   // With automatic analysis on, queue it, after the transcript has had time to arrive (D28).
   const auto = await c.env.DB.prepare("SELECT api_model FROM users WHERE id = ?1").bind(user.id).first<{ api_model: string | null }>();
-  if (auto?.api_model) await enqueue(c.env, user.id, meal.id, auto.api_model, "analyze", null, meal.voice ? 30_000 : 0);
+  if (auto?.api_model) await enqueue(c.env, user.id, meal.id, auto.api_model, "analyze", null, voices.length ? 30_000 : 0);
   return c.json({ ok: true }, 201);
 });
 
@@ -166,17 +168,19 @@ meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
   if (!row) return c.json({ error: "not_found" }, 404);
   const [meal] = await attachPhotos(c.env.DB, user.id, [row]);
   const all = await loadAnalyses(c.env.DB, user.id, [meal.id], false);
-  const voice = await c.env.DB.prepare("SELECT duration_ms, transcript, transcript_model FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2")
+  const { results: voices } = await c.env.DB.prepare(
+    "SELECT id, duration_ms, recorded_at, transcript, transcript_model FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2 ORDER BY position",
+  )
     .bind(meal.id, user.id)
-    .first<VoiceNote>();
+    .all<VoiceNote>();
   const api = await analysisState(c.env.DB, user.id, [meal.id]);
-  return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [], voice, api: api.get(meal.id) } });
+  return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [], voices, api: api.get(meal.id) } });
 });
 
-// GET /api/meals/:id/voice — the voice note's audio, for playback. Answers Range requests:
-// iPhone Safari asks for bytes=0-1 first and won't play audio from a server that ignores it.
-meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}/voice", async (c) => {
-  const row = await c.env.DB.prepare("SELECT r2_key, mime FROM voice_notes WHERE meal_id = ?1 AND user_id = ?2")
+// GET /api/voice/:id — a voice note's audio, for playback. Answers Range requests: iPhone
+// Safari asks for bytes=0-1 first and won't play audio from a server that ignores it.
+meals.get("/voice/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
+  const row = await c.env.DB.prepare("SELECT r2_key, mime FROM voice_notes WHERE id = ?1 AND user_id = ?2")
     .bind(c.req.param("id"), c.get("user").id)
     .first<{ r2_key: string; mime: string }>();
   const ranged = !!row && /^bytes=\d*-\d*$/.test(c.req.header("Range") ?? "");
@@ -310,6 +314,13 @@ meals.get("/photos/:id/display", async (c) => {
   });
 });
 
+// A meal's voice notes in order. A phone still on the app from before D46 sends one `voice`,
+// uploaded under the meal's own id.
+function voicesOf(m: NewMeal): NewVoice[] {
+  if (Array.isArray(m.voices)) return m.voices;
+  return m.voice ? [{ id: m.id, ...m.voice }] : [];
+}
+
 function validate(m: NewMeal | null): string | null {
   if (!m || typeof m !== "object") return "body";
   if (!isUlid(m.id)) return "id";
@@ -319,7 +330,10 @@ function validate(m: NewMeal | null): string | null {
   if (m.note !== null && (typeof m.note !== "string" || m.note.length > MAX_NOTE)) return "note";
   if (!Array.isArray(m.photos) || m.photos.length > MAX_PHOTOS) return "photos";
   // A meal added afterwards may have no photo (D24); then its description is all there is.
-  if (m.photos.length === 0 && m.voice === undefined && !m.note?.trim()) return "photos";
+  if (m.voices !== undefined && m.voice !== undefined) return "voice";
+  if (m.voices !== undefined && (!Array.isArray(m.voices) || m.voices.length > MAX_VOICES)) return "voices";
+  const voices = voicesOf(m);
+  if (m.photos.length === 0 && voices.length === 0 && !m.note?.trim()) return "photos";
   const ids = new Set<string>();
   for (const p of m.photos) {
     if (!isUlid(p.id) || ids.has(p.id)) return "photo.id";
@@ -331,12 +345,15 @@ function validate(m: NewMeal | null): string | null {
     for (const n of [p.width, p.height]) if (n !== null && !(Number.isInteger(n) && n > 0)) return "photo.size";
     if (p.taken_at !== undefined && !isIsoWithOffset(p.taken_at)) return "photo.taken_at";
   }
-  if (m.voice !== undefined) {
-    const v = m.voice;
-    if (!v || typeof v.mime !== "string" || !v.mime.startsWith("audio/")) return "voice.mime";
+  const voiceIds = new Set<string>();
+  for (const v of voices) {
+    if (!v || !isUlid(v.id) || voiceIds.has(v.id)) return "voice.id";
+    voiceIds.add(v.id);
+    if (typeof v.mime !== "string" || !v.mime.startsWith("audio/")) return "voice.mime";
     if (!Number.isInteger(v.bytes) || v.bytes <= 0 || v.bytes > MAX_VOICE_BYTES || !isSha(v.sha256)) return "voice.file";
     // A little slack over the cap: recorders stop a few hundred ms late.
     if (!Number.isInteger(v.duration_ms) || v.duration_ms <= 0 || v.duration_ms > MAX_VOICE_MS + 3000) return "voice.duration";
+    if (v.recorded_at !== undefined && !isIsoWithOffset(v.recorded_at)) return "voice.recorded_at";
   }
   return null;
 }
