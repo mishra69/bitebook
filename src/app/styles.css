@@ -212,7 +212,7 @@ ul { margin: 0; padding-left: 1.2rem; }
 .waiting-questions p { margin: 0 0 0.4rem; }
 .waiting-question { display: block; padding: 0.5rem 0; color: var(--fg); text-decoration: none; border-top: 1px solid var(--grid); }
 .day-total p { margin: 0.15rem 0; }
-.chat-waiting { display: block; color: var(--fg); text-decoration: none; margin: 0.5rem 0; }
+.chat-waiting, .chat-open { display: block; color: var(--fg); text-decoration: none; margin: 0.5rem 0; }
 .card + .card, .card.day-total, .card.waiting-questions { margin-bottom: 0.6rem; }
 .trends .chips { margin: 0.4rem 0; }
 /* The chart is read by dragging (after Cadence's charts). touch-action has to be on this

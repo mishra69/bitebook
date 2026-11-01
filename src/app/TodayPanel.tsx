@@ -41,6 +41,11 @@ export function TodayPanel() {
           </p>
         </section>
       )}
+      {o.chat_open > 0 && (
+        <a class="card chat-open" href="#/analyze">
+          {o.chat_open === 1 ? "A batch is" : `${o.chat_open} batches are`} waiting for the chatbot's reply → <strong>Paste the reply</strong>
+        </a>
+      )}
       {!o.auto_model && o.chat_waiting > 0 && (
         <a class="card chat-waiting" href="#/analyze">
           {o.chat_waiting} meal{o.chat_waiting === 1 ? "" : "s"} waiting for analysis → <strong>Analyze in a chat</strong>

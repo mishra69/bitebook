@@ -20,6 +20,7 @@ export type Overview = {
   latest: { text: string; suggestion: string | null; model: string; at: string } | null;
   auto_model: string | null;
   chat_waiting: number;
+  chat_open: number; // batches handed to a chat, waiting for the reply
 };
 
 export const localDate = (d = new Date()) =>

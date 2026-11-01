@@ -692,3 +692,12 @@ helping or a forgotten detail is easier to say as another short note than to re-
 - **Prompt (prompt/11):** one note reads exactly as before. Several are numbered in the order
   recorded, with the time of each, and the prompt says a later one can add a helping or
   correct an earlier one, so the same food isn't counted twice.
+
+## D47 · 2026-11-01 · A card leads back to a batch waiting for its reply
+
+In chat mode, creating a batch takes its meals out of "waiting for analysis", so the card on
+Meals that leads to Analyze disappeared with them. When iOS reopened the app on Meals after
+the chat (it can restart a home-screen app that was in the background), nothing led back to
+the batch whose reply was ready to paste, and nothing could be exported again either: those
+meals were in it. Meals now shows "A batch is waiting for the chatbot's reply → Paste the
+reply" while a chat batch is open (`chat_open` in `/api/overview`).

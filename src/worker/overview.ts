@@ -87,7 +87,7 @@ overview.get("/overview", async (c) => {
   const since = Date.now() - (days + 1) * 86_400_000;
   const byDate = await dayTotals(c.env.DB, user.id, "m.taken_ms >= ?2", since);
 
-  const [questions, latest, settings, chatWaiting] = await Promise.all([
+  const [questions, latest, settings, chatWaiting, chatOpen] = await Promise.all([
     c.env.DB.prepare(
       `SELECT q.id, q.question, m.id AS meal_id, m.taken_at, m.meal_type FROM questions q JOIN meals m ON m.id = q.meal_id
        WHERE q.user_id = ?1 AND q.answer IS NULL AND m.deleted_at IS NULL ORDER BY q.created_at DESC LIMIT 10`,
@@ -109,6 +109,8 @@ overview.get("/overview", async (c) => {
     )
       .bind(user.id)
       .first<{ n: number }>(),
+    // Batches handed to a chat and still waiting for their reply to be pasted back.
+    c.env.DB.prepare("SELECT COUNT(*) AS n FROM batches WHERE user_id = ?1 AND status = 'open' AND channel = 'chat'").bind(user.id).first<{ n: number }>(),
   ]);
 
   return c.json({
@@ -117,5 +119,6 @@ overview.get("/overview", async (c) => {
     latest: latest ? { ...(JSON.parse(latest.summary) as { text: string; suggestion: string | null }), model: latest.reply_model, at: latest.imported_at } : null,
     auto_model: settings?.api_model ?? null,
     chat_waiting: chatWaiting?.n ?? 0,
+    chat_open: chatOpen?.n ?? 0,
   });
 });

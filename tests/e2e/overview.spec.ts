@@ -30,6 +30,18 @@ test("in chat mode, Meals points to the meals waiting for a handoff", async ({ p
   await expect(page.locator(".analyze")).toBeVisible();
   await page.getByRole("button", { name: "← Back" }).click();
   await expect(page.locator(".chat-waiting")).toBeVisible();
+
+  // Handed to a chat, the meals leave "waiting", but the batch still needs its reply: a
+  // card leads back to it (the app may have reloaded while the chat was open).
+  for (const b of (await (await request.get("/api/batches?status=open")).json()).batches) await request.post(`/api/batches/${b.id}/abandon`);
+  const { meals } = await (await request.get("/api/batches/pending-meals")).json();
+  const batch = (await (await request.post("/api/batches", { data: { meal_ids: meals.map((m: { id: string }) => m.id).slice(0, 20) } })).json()).batch;
+  await page.reload();
+  const open = page.locator(".chat-open");
+  await expect(open).toContainText("A batch is waiting for the chatbot's reply → Paste the reply");
+  await open.click();
+  await expect(page.locator(".batch textarea")).toBeVisible();
+  await request.post(`/api/batches/${batch.id}/abandon`);
 });
 
 test("with automatic analysis, Today shows the running total and the model's question", async ({ page, request }) => {
