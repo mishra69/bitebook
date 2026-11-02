@@ -41,8 +41,9 @@ test("a pasted reply becomes analyses on the meals, and the batch's summary is s
   await expect(page.getByText("No meals waiting.")).toBeVisible();
 
   await page.goto("/#/");
-  // Analyzed now, so its day starts closed (D39): open it.
-  await page.locator("li.day", { has: page.locator(".day-title strong", { hasText: "Sat, Oct 17" }) }).locator(".day-head").click();
+  // Open its day, unless it's open already (it was when Meals first loaded, unanalyzed).
+  const head = page.locator("li.day", { has: page.locator(".day-title strong", { hasText: "Sat, Oct 17" }) }).locator(".day-head");
+  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
   const curry = page.locator(".meal", { hasText: "curry night" });
   await expect(curry.locator(".meal-analysis")).toContainText("tomato-cream curry with chicken or paneer cubes, no rice · ~400 kcal · P25 · fiber 7");
   await curry.locator("a.meal-link").click();

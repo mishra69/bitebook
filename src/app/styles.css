@@ -29,6 +29,12 @@
 html, body {
   /* From the pwa-cloudflare skill: rubber-band scrolling reads as broken in a standalone app. */
   overscroll-behavior: none;
+  /* The document doesn't scroll; .screen does. While the document scrolled, iOS would now
+     and then paint the fixed bottom bar at a stale offset mid-scroll, lifting it off the
+     bottom with the page showing underneath. A fixed element sits against the viewport,
+     and the viewport stops moving once the scroll lives in a child (as in Cadence). */
+  height: 100%;
+  overflow: hidden;
 }
 button, .button, [role="button"], input, select, a {
   touch-action: manipulation;
@@ -41,11 +47,13 @@ body {
 }
 /* Every full-screen container honours the safe area on all four sides. */
 .screen {
-  max-width: 32rem;
-  margin: 0 auto;
-  min-height: 100dvh;
-  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
-           max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  /* The scroll container, in place of the document: exactly the viewport tall, full width so
+     a swipe anywhere scrolls it, with the content centred in a 32rem column by its padding. */
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right), calc((100% - 32rem) / 2))
+           max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left), calc((100% - 32rem) / 2));
 }
 h1 { margin: 0.5rem 0 0; }
 h2 { font-size: 1rem; margin: 0 0 0.5rem; }

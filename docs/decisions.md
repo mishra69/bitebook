@@ -701,3 +701,16 @@ the chat (it can restart a home-screen app that was in the background), nothing 
 the batch whose reply was ready to paste, and nothing could be exported again either: those
 meals were in it. Meals now shows "A batch is waiting for the chatbot's reply → Paste the
 reply" while a chat batch is open (`chat_open` in `/api/overview`).
+
+## D48 · 2026-11-02 · The screen scrolls, not the page
+
+On the iPhone the bottom bar (Say it / Snap it) was sometimes lifted off the bottom while
+scrolling, with the list showing underneath. iOS now and then paints a fixed element at a
+stale offset while the document itself is scrolling. As Cadence did for its tab bar, the
+document no longer scrolls: `html, body` are the viewport's height with overflow hidden, and
+`main.screen` is the scroll container, full width with the content centred by its padding.
+
+Two things came with it. The browser restored the list's place on Back only for the
+document, so Meals now stays mounted (hidden) while another screen is open and keeps its
+scroll position, loaded days and opened rows; every other screen opens at the top. And an
+opened day stays open when coming back to it, rather than resetting.

@@ -13,7 +13,7 @@ import { EarlierDays } from "./EarlierDays";
 import { ToastHost } from "./Toast";
 import { startSync } from "./lib/outbox";
 import { refreshReminders } from "./lib/reminders";
-import { useRoute } from "./lib/router";
+import { parseRoute, useRoute } from "./lib/router";
 import { liveVersion, versionLabel } from "./version";
 
 type Health = { user: string; userId: string; picture: string | null; d1: string; r2: string } | { error: string };
@@ -35,6 +35,7 @@ export function App() {
   const [authState, setAuthState] = useState<"checking" | "ok" | "signed_out" | "offline" | "error">("checking");
   const [live, setLive] = useState<string>();
   const route = useRoute();
+  const screen = useScrollMemory();
 
   const checkSession = async () => {
     let h: Health;
@@ -94,7 +95,7 @@ export function App() {
   };
 
   return (
-    <main class="screen">
+    <main class="screen" ref={screen}>
       {(user || authState !== "signed_out") && (
         <header class="app-header">
           <h1>
@@ -114,15 +115,15 @@ export function App() {
               ← Meals
             </a>
           )}
-          {route.name === "meals" && (
-            <>
-              <Capture userId={user.id} missed={route.missed} />
-              <TodayPanel />
-              <ReminderOffer />
-              <MealList userId={user.id} />
-              <EarlierDays />
-            </>
-          )}
+          {/* Kept while another screen is open, so Back returns to the list as it was: the
+              days loaded, the ones opened, the place scrolled to. */}
+          <div hidden={route.name !== "meals"}>
+            <Capture userId={user.id} missed={route.name === "meals" && route.missed} />
+            <TodayPanel />
+            <ReminderOffer />
+            <MealList userId={user.id} />
+            <EarlierDays />
+          </div>
           {route.name === "trends" && <Trends />}
           {route.name === "analyze" && <Analyze />}
           {route.name === "memory" && <Memory />}
@@ -182,4 +183,30 @@ function AccountMenu({ email, picture, active }: { email: string; picture: strin
       )}
     </div>
   );
+}
+
+// .screen scrolls, not the document (see styles.css), so the browser no longer brings back
+// the list's place on Back. Meals stays mounted under other screens, so returning to it can
+// restore where it was; every other screen opens at the top.
+function useScrollMemory() {
+  const screen = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = screen.current;
+    if (!el) return;
+    const onMeals = () => parseRoute(location.hash).name === "meals";
+    let mealsTop = 0;
+    // Recorded only while Meals shows: once the hash has changed, a scroll is the old screen
+    // being replaced, not the user.
+    const onScroll = () => {
+      if (onMeals()) mealsTop = el.scrollTop;
+    };
+    const onHash = () => requestAnimationFrame(() => (el.scrollTop = onMeals() ? mealsTop : 0));
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("hashchange", onHash);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("hashchange", onHash);
+    };
+  }, []);
+  return screen;
 }

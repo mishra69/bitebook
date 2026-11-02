@@ -45,6 +45,23 @@ test("earlier days are rows with totals that open to their meals, and older days
   await page.locator(".more").scrollIntoViewIfNeeded();
   await expect(row("Sun, Sep 6")).toHaveCount(1);
 
+  // The screen scrolls, not the page, so the bottom bar can't be dragged off the bottom on
+  // iPhone; and Back returns to the same place in the list.
+  const screen = page.locator("main.screen");
+  expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+  const bar = (await page.locator(".bottom-bar").boundingBox())!;
+  expect(bar.y + bar.height).toBe(page.viewportSize()!.height);
+  const sep6 = row("Sun, Sep 6");
+  await sep6.locator(".day-head").click();
+  await sep6.locator("a.meal-link").scrollIntoViewIfNeeded();
+  const listTop = await screen.evaluate((el) => el.scrollTop);
+  expect(listTop).toBeGreaterThan(1000);
+  await sep6.locator("a.meal-link").click();
+  await expect(page.locator(".detail h2")).toContainText("September 6");
+  await expect.poll(() => screen.evaluate((el) => el.scrollTop)).toBe(0);
+  await page.goBack();
+  await expect.poll(async () => Math.abs((await screen.evaluate((el) => el.scrollTop)) - listTop)).toBeLessThan(3);
+
   // Open a meal, delete it, undo.
   await oct9.locator(".day-head").click();
   await oct9.locator(".meal", { hasText: "day 1" }).locator("a.meal-link").click();
