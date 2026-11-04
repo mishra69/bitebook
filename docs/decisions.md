@@ -714,3 +714,17 @@ Two things came with it. The browser restored the list's place on Back only for 
 document, so Meals now stays mounted (hidden) while another screen is open and keeps its
 scroll position, loaded days and opened rows; every other screen opens at the top. And an
 opened day stays open when coming back to it, rather than resetting.
+
+## D49 · 2026-11-04 · Say when a photo was lost to the camera
+
+On Nov 4 a photo never reached Bitebook: the app went to the background for the camera at
+14:19 and next started at 14:51, fresh, with no draft. iPhone had closed it while the camera
+was open, and since the first photo is what creates a draft, nothing was kept; a photo taken
+from a web app's camera isn't saved to the library either. Bitebook can't prevent that, and
+skipping iPhone's Retake / Use Photo step would mean its own camera, which re-asks for
+permission on launch (rejected: two taps either way, and it feels untrustworthy).
+
+So it says so: opening the camera leaves a mark in localStorage, cleared when a photo
+arrives or when the app comes back to the screen still running. A fresh start that finds a
+mark under an hour old shows "Your last photo didn't reach Bitebook…" once, and logs
+`camera_photo_lost`.

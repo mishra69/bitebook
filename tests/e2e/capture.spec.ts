@@ -182,6 +182,26 @@ test("a draft left open for over 90 minutes is saved when the app is next opened
   await serverMeal(request, "left open");
 });
 
+test("a photo lost because iPhone closed the app under the camera is reported on the next start", async ({ page }) => {
+  await openApp(page);
+  // The camera opens and the app goes away before a photo arrives (here: a reload).
+  await page.getByRole("button", { name: "Snap it" }).click();
+  await page.reload();
+  await expect(page.locator(".toast")).toContainText("Your last photo didn't reach Bitebook");
+  await page.reload();
+  await expect(page.locator(".toast")).toHaveCount(0); // said once
+
+  // A photo that arrives clears it.
+  await page.getByRole("button", { name: "Snap it" }).click();
+  await page.locator("input[type=file]").setInputFiles("tests/fixtures/side.png");
+  await expect(page.locator(".draft figure.thumb")).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator(".draft figure.thumb")).toHaveCount(1);
+  await expect(page.locator(".toast")).toHaveCount(0);
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Discard" }).click();
+});
+
 test("a draft still in progress stays open across a reload", async ({ page }) => {
   await openApp(page);
   await page.getByRole("button", { name: "Snap it" }).click();

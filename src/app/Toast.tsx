@@ -3,7 +3,10 @@ import { getToast, onToast, showToast } from "./lib/notify";
 
 export function ToastHost() {
   const [toast, setToast] = useState(getToast());
-  useEffect(() => onToast(() => setToast(getToast())), []);
+  useEffect(() => {
+    setToast(getToast()); // one shown by a screen's effect before this one subscribed
+    return onToast(() => setToast(getToast()));
+  }, []);
   if (!toast) return null;
   return (
     <div class="toast" role="status">

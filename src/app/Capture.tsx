@@ -10,6 +10,33 @@ import { showToast } from "./lib/notify";
 import { daysAgoOf, deviceTz, localIso, missedMealOnDay, missedMealTime, suggestMealType, timeOfDay } from "./lib/time";
 import { deleteMeal, getDraft, putMeal, sync, type OutboxMeal, type OutboxVoice } from "./lib/outbox";
 
+// A mark kept while the camera is open (D49). Found on a fresh start, it means the app was
+// closed under the camera. Older than an hour, it's stale and says nothing.
+const CAMERA_KEY = "bitebook.cameraOpenedAt";
+const cameraOpened = () => {
+  try {
+    localStorage.setItem(CAMERA_KEY, String(Date.now()));
+  } catch {
+    /* storage blocked: no notice, nothing else changes */
+  }
+};
+const cameraClosed = () => {
+  try {
+    localStorage.removeItem(CAMERA_KEY);
+  } catch {
+    /* ignore */
+  }
+};
+function photoLostToCamera(): boolean {
+  try {
+    const at = Number(localStorage.getItem(CAMERA_KEY));
+    localStorage.removeItem(CAMERA_KEY);
+    return at > 0 && Date.now() - at < 3_600_000;
+  } catch {
+    return false;
+  }
+}
+
 // The capture flow: tap → camera → draft (add more photos, meal type, note) → save.
 // The draft is written to the outbox on every change (marked draft, so it isn't
 // uploaded), because iOS may reload the app while the camera is open. Saving clears
@@ -29,6 +56,29 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
     latest.current = d;
     setDraftState(d);
   };
+
+  // iPhone can close Bitebook while its camera is open; the photo then reaches nobody.
+  // Say so on the next start, rather than leave the user to notice the meal is missing.
+  useEffect(() => {
+    if (!photoLostToCamera()) return;
+    diag("camera_photo_lost");
+    showToast({ text: "Your last photo didn't reach Bitebook: iPhone closed the app while the camera was open. Take it again, or describe the meal with Say it." }, 20_000);
+  }, []);
+
+  // Back from the camera with the app still running: nothing was lost, whether a photo
+  // came (onFiles clears the mark) or the camera was cancelled.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onVisible = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === "visible") timer = setTimeout(cameraClosed, 3_000);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   // On open and on every return to the app: restore the draft, or save it if it was left
   // open (the meal's time comes from its photos, so saving late changes nothing).
@@ -123,10 +173,12 @@ export function Capture({ userId, missed }: { userId: string; missed?: boolean }
   const openCamera = () => {
     setError(null);
     input.current!.value = "";
+    cameraOpened();
     input.current!.click();
   };
 
   const onFiles = async (files: FileList | null) => {
+    cameraClosed();
     if (!files?.length) return;
     setBusy("Processing photo…");
     try {
