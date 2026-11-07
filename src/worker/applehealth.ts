@@ -91,8 +91,11 @@ shortcut.get("/meals", async (c) => {
     .bind(run, userId, JSON.stringify(meals.map((m) => m.meal_id)), new Date().toISOString())
     .run();
   const origin = new URL(c.req.url).origin;
+  const held = await heldBack(c.env.DB, userId, Date.now());
   return c.json({
     count: meals.length,
+    ...held,
+    message: message(meals.length, "to send", held),
     done_url: `${origin}/shortcut/done/${run}`,
     meals: meals.map((m) => ({
       id: m.meal_id,
@@ -131,8 +134,61 @@ shortcut.post("/done/:run", async (c) => {
     ),
     c.env.DB.prepare("UPDATE health_runs SET done_at = ?2 WHERE id = ?1").bind(c.req.param("run"), now),
   ]);
-  return c.json({ ok: true, logged: latest.length });
+  const held = await heldBack(c.env.DB, userId, Date.now());
+  return c.json({ ok: true, logged: latest.length, ...held, message: message(latest.length, "logged", held) });
 });
+
+// Why the meals not sent yet aren't (D50), so "logged 0" never looks like a failure.
+type Held = { settling: number; next_ready: string | null; needs_answer: number; analyzing: number; not_analyzed: number };
+async function heldBack(db: D1Database, userId: string, now: number): Promise<Held> {
+  const { results } = await db
+    .prepare(
+      `SELECT m.tz,
+         (SELECT MAX(created_at) FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0) AS analyzed_at,
+         EXISTS (SELECT 1 FROM questions q WHERE q.user_id = ?1 AND q.meal_id = m.id AND q.answer IS NULL) AS asked,
+         EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running')) AS busy
+       FROM meals m
+       WHERE m.user_id = ?1 AND m.deleted_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM health_exports e WHERE e.user_id = ?1 AND e.meal_id = m.id)`,
+    )
+    .bind(userId)
+    .all<{ tz: string; analyzed_at: string | null; asked: number; busy: number }>();
+  const held: Held = { settling: 0, next_ready: null, needs_answer: 0, analyzing: 0, not_analyzed: 0 };
+  let soonest: { at: number; tz: string } | null = null;
+  for (const r of results) {
+    if (r.asked) held.needs_answer++;
+    else if (r.busy) held.analyzing++;
+    else if (!r.analyzed_at) held.not_analyzed++;
+    else {
+      const ready = Date.parse(r.analyzed_at) + SETTLED_MS;
+      if (ready <= now) continue; // settled: being sent
+      held.settling++;
+      if (!soonest || ready < soonest.at) soonest = { at: ready, tz: r.tz };
+    }
+  }
+  if (soonest) held.next_ready = clockTime(soonest.at, soonest.tz);
+  return held;
+}
+
+// "Logged 0. 3 waiting to settle, the next at 9:53 AM."
+function message(n: number, verb: string, h: Held) {
+  const parts = [
+    h.settling && `${h.settling} waiting to settle${h.next_ready ? `, the next at ${h.next_ready}` : ""}`,
+    h.needs_answer && `${h.needs_answer} with a question to answer`,
+    h.analyzing && `${h.analyzing} being analyzed`,
+    h.not_analyzed && `${h.not_analyzed} not analyzed yet`,
+  ].filter(Boolean);
+  const head = `${n} meal${n === 1 ? "" : "s"} ${verb}.`;
+  return parts.length ? `${head} ${parts.join("; ")}.` : head;
+}
+
+function clockTime(ms: number, tz: string) {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(ms).replace(/\u202f/g, " ");
+  } catch {
+    return new Date(ms).toISOString().slice(11, 16) + " UTC";
+  }
+}
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 // e.g. "October 26, 2026 at 9:47 PM"

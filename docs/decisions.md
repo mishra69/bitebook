@@ -728,3 +728,17 @@ So it says so: opening the camera leaves a mark in localStorage, cleared when a 
 arrives or when the app comes back to the screen still running. A fresh start that finds a
 mark under an hour old shows "Your last photo didn't reach Bitebook…" once, and logs
 `camera_photo_lost`.
+
+## D50 · 2026-11-07 · The Shortcut says why meals are waiting
+
+Run by hand at 9:50 am, the Shortcut logged 0, which read as broken: three meals had been
+analyzed at 8:52 and were 58 minutes into D34's hour. Both Shortcut replies now carry what's
+held back and why: `settling` (with `next_ready`, the soonest clock time one settles, in the
+meal's zone), `needs_answer`, `analyzing` and `not_analyzed`, and a `message` that says it
+in a line ("0 meals logged. 3 waiting to settle, the next at 9:53 AM."), which the guide
+shows how to put in a notification.
+
+The hour stays (D42). Talked through what it guards, the user's own case being chat mode
+with every question answered: an unsaved draft is never on the server, an open question or
+a queued re-estimate already holds a meal back, so the hour covers only second thoughts:
+"Correct this" (API mode) and deleting the meal, which Health would otherwise keep.

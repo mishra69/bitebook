@@ -39,6 +39,10 @@ test("the Shortcut gets settled meals once, with a date and plain numbers, and c
   const ids = first.meals.map((m: { id: string }) => m.id);
   expect(ids).toEqual(expect.arrayContaining([a, b]));
   expect(ids).not.toContain(fresh); // not settled yet
+  // Held back, and the reply says why and until when (D50).
+  expect(first.settling).toBeGreaterThanOrEqual(1);
+  expect(first.next_ready).toMatch(/^\d{1,2}:\d{2} [AP]M$/);
+  expect(first.message).toMatch(/^\d+ meals? to send\. \d+ waiting to settle, the next at \d{1,2}:\d{2} [AP]M/);
   const meal = first.meals.find((m: { id: string }) => m.id === a);
   expect(meal).toEqual({ id: a, date: "October 26, 2026 at 8:30 AM", date_iso: "2026-10-26T08:30:00-07:00", kcal: 512.3, protein_g: 20, carbs_g: 60, fat_g: 15, fiber_g: 6 });
   expect(first.meals.find((m: { id: string }) => m.id === b)).not.toHaveProperty("fiber_g"); // unknown, not zero
@@ -47,7 +51,10 @@ test("the Shortcut gets settled meals once, with a date and plain numbers, and c
   // Not confirmed: handed out again. Confirmed: never again.
   expect((await (await shortcut(request, "/shortcut/meals")).json()).meals.map((m: { id: string }) => m.id)).toContain(a);
   const done = await shortcut(request, new URL(first.done_url).pathname, "POST");
-  expect(await done.json()).toMatchObject({ ok: true });
+  const doneBody = await done.json();
+  expect(doneBody).toMatchObject({ ok: true });
+  expect(doneBody.message).toMatch(/^\d+ meals? logged\./);
+  expect(doneBody.message).toContain("waiting to settle"); // the fresh one
   const next = (await (await shortcut(request, "/shortcut/meals")).json()).meals.map((m: { id: string }) => m.id);
   expect(next).not.toContain(a);
   expect(next).not.toContain(b);

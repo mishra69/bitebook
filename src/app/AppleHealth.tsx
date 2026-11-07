@@ -127,6 +127,10 @@ function Guide({ url, keyValue }: { url: string; keyValue: string }) {
           on it with Method <b>POST</b> and the same Authorization header. This tells Bitebook the meals are in Health, so they're never sent twice.
         </li>
         <li>
+          Optional: <b>Get Dictionary Value</b> <code>message</code> in that last <i>Contents of URL</i>, then <b>Show Notification</b> with
+          it. You'll see what was logged and what's waiting, e.g. “0 meals logged. 3 waiting to settle, the next at 9:53 AM.”
+        </li>
+        <li>
           Check each <b>Log Health Sample</b>: its Value must be the <i>Dictionary Value</i> from the step just above it (tap it to see
           which step it comes from; Shortcuts names them all alike), and its Date must be <i>Dates</i>.
         </li>
