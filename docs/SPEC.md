@@ -403,7 +403,7 @@ the running total.
 
 ## 11. Build order
 
-> **Tier:** Plan · **Verified:** 2026-10-31 · **Expires:** 2027-01-31
+> **Tier:** Plan · **Verified:** 2026-11-07 · **Expires:** 2027-02-07
 
 *Steps 1–5 are built, plus questions (D18), per-photo times and draft auto-save (D19),
 voice notes (D21), fiber (D22), missed meals without a photo (D24), reminders (D25), the
@@ -449,6 +449,27 @@ about 2,600 input tokens per photo):
 - **"Again" chips for routine meals** (added 2026-10-31). Under "Say it", the meals usually
   eaten at this time ("coffee + cake"), logged in one tap. Open question: copy the last
   estimate without a model call, or still analyze; the user is unsure the first works.
+- **Goals, and a day view you can read at a glance** (added 2026-11-07). Earlier days are a
+  wall of numbers. Five measures, two directions: protein and fiber, more is better (rings
+  to close); calories, carbs and fat, less is better (limits that turn orange past the
+  line). Mockups, three options, real data:
+  https://claude.ai/artifact/YLXeFuFALKA5TVkgRqpQDa (A: two rings + three limit bars per
+  day; B: five rings; C: the week as rings, plain rows below). Without goals each day is
+  measured against the usual day; that drifts with the user, so goals come first or with
+  it. Goals: set by hand to start. Later, given to the user: an intake (a few questions,
+  optionally an Apple Health export) after which the model proposes the five goals with
+  its reasons, to accept or adjust; shares its picture of the user with the coaching tip.
+  Open: calories need a floor as well as a ceiling (far under is a missed meal or a bad
+  day, not a win); which option.
+- **Search** (added 2026-11-07). A search icon in the header; every word must match, across
+  each meal's newest description, its note and its voice transcripts, plus remembered
+  foods by name (those listed first, with their saved values). Mockups:
+  https://claude.ai/artifact/5aDkFPDcdLF7JK6h8YrLU9 (before typing: recent searches and
+  usuals; "apple peanut": the Oct 29 snack, 340 kcal; "peanut": the laddu, then 6 meals).
+  Build: a maintained search-text per meal, refreshed when an estimate, note or transcript
+  changes, queried with LIKE (a few hundred meals: milliseconds). Move to FTS5 (stemming,
+  prefixes, ranking) when misses annoy or data grows, after checking D1 export handles
+  virtual tables. "Log this again" on a result is the "Again" idea above.
 
 Backlog (corpus only, no effect on nutrition data):
 - **👎 on a bad transcript.** One tap on the meal detail flags a voice note's transcript
