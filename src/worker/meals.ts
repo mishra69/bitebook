@@ -1,3 +1,4 @@
+import { HANDLED } from "./handled";
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { isUlid } from "../shared/ulid";
@@ -154,7 +155,11 @@ meals.get("/meals", async (c) => {
   const withPhotos = await attachPhotos(c.env.DB, user.id, page.map(({ taken_ms, ...m }) => m));
   const latest = await loadAnalyses(c.env.DB, user.id, withPhotos.map((m) => m.id), true);
   const api = await analysisState(c.env.DB, user.id, withPhotos.map((m) => m.id));
-  return c.json({ meals: withPhotos.map((m) => ({ ...m, analysis: latest.get(m.id)?.[0] ?? null, api: api.get(m.id) })), next_before });
+  const skipped = await notCounted(c.env.DB, user.id, withPhotos.map((m) => m.id));
+  return c.json({
+    meals: withPhotos.map((m) => ({ ...m, analysis: latest.get(m.id)?.[0] ?? null, not_counted: skipped.get(m.id) ?? null, api: api.get(m.id) })),
+    next_before,
+  });
 });
 
 // GET /api/meals/:id — one meal, for the detail screen.
@@ -174,7 +179,32 @@ meals.get("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
     .bind(meal.id, user.id)
     .all<VoiceNote>();
   const api = await analysisState(c.env.DB, user.id, [meal.id]);
-  return c.json({ meal: { ...meal, analyses: all.get(meal.id) ?? [], voices, api: api.get(meal.id) } });
+  const skipped = await notCounted(c.env.DB, user.id, [meal.id]);
+  const again = await c.env.DB.prepare(`SELECT reanalyze_at IS NOT NULL AND NOT ${HANDLED()} AS waiting FROM meals m WHERE m.id = ?2 AND m.user_id = ?1`)
+    .bind(user.id, meal.id)
+    .first<{ waiting: number }>();
+  return c.json({
+    meal: { ...meal, analyses: all.get(meal.id) ?? [], voices, not_counted: skipped.get(meal.id) ?? null, reanalyze_requested: !!again?.waiting, api: api.get(meal.id) },
+  });
+});
+
+// POST /api/meals/:id/reanalyze — "Analyze again" on a meal the model skipped (D51): it
+// waits for analysis again (chat mode: in the next batch), or is queued (automatic analysis).
+meals.post("/meals/:id{[0-9A-HJKMNP-TV-Z]{26}}/reanalyze", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const skippedOnly = await c.env.DB.prepare(
+    `SELECT 1 FROM meals m WHERE m.id = ?2 AND m.user_id = ?1 AND m.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0)
+       AND EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 1)`,
+  )
+    .bind(user.id, id)
+    .first();
+  if (!skippedOnly) return c.json({ error: "not_skipped" }, 409);
+  await c.env.DB.prepare("UPDATE meals SET reanalyze_at = ?3 WHERE id = ?2 AND user_id = ?1").bind(user.id, id, new Date().toISOString()).run();
+  const auto = await c.env.DB.prepare("SELECT api_model FROM users WHERE id = ?1").bind(user.id).first<{ api_model: string | null }>();
+  if (auto?.api_model) await enqueue(c.env, user.id, id, auto.api_model, "analyze", null);
+  return c.json({ ok: true, queued: !!auto?.api_model });
 });
 
 // GET /api/voice/:id — a voice note's audio, for playback. Answers Range requests: iPhone
@@ -198,6 +228,26 @@ meals.get("/voice/:id{[0-9A-HJKMNP-TV-Z]{26}}", async (c) => {
   headers.set("Content-Length", String(obj.size));
   return new Response(obj.body, { headers });
 });
+
+// Meals the model skipped, with no counted estimate and no "Analyze again" pending: the
+// newest skip's reason (D51).
+async function notCounted(db: D1Database, userId: string, mealIds: string[]) {
+  const out = new Map<string, string>();
+  if (mealIds.length === 0) return out;
+  const { results } = await db
+    .prepare(
+      `SELECT m.id, (SELECT json_extract(a.payload, '$.skip_reason') FROM analyses a
+                     WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 1 ORDER BY a.created_at DESC LIMIT 1) AS reason
+       FROM meals m
+       WHERE m.user_id = ?1 AND m.id IN (SELECT value FROM json_each(?2))
+         AND NOT EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0)
+         AND ${HANDLED()}`,
+    )
+    .bind(userId, JSON.stringify(mealIds))
+    .all<{ id: string; reason: string | null }>();
+  for (const r of results) out.set(r.id, r.reason?.trim() || "The model chose not to count it.");
+  return out;
+}
 
 // Analyses per meal, newest first. latestOnly keeps just the newest non-skipped one.
 async function loadAnalyses(db: D1Database, userId: string, mealIds: string[], latestOnly: boolean) {

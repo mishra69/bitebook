@@ -43,6 +43,9 @@ export type Meal = {
   voices?: VoiceNote[]; // on the detail screen, in the order recorded
   has_voice?: boolean; // whether there's a voice note (in lists; its text is on the detail screen)
   analysis?: Analysis | null; // the latest non-skipped one, in lists
+  // Skipped by the model and so counted as nothing (D51): its reason. Null otherwise.
+  not_counted?: string | null;
+  reanalyze_requested?: boolean; // "Analyze again" was asked after a skip, on the detail screen
   analyses?: Analysis[]; // every one, newest first, on the detail screen
   api?: ApiState; // the API path's latest run and open questions (D28)
 };

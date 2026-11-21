@@ -4,6 +4,7 @@ import { mealLabel } from "./MealRow";
 import { ApiPanel } from "./ApiPanel";
 import { deleteSavedMeal } from "./lib/mealsApi";
 import { timeOfDay } from "./lib/time";
+import { mealsChanged, showToast } from "./lib/notify";
 
 export function MealDetail({ id }: { id: string }) {
   const [meal, setMeal] = useState<Meal | null | "missing" | "error">(null);
@@ -64,11 +65,40 @@ export function MealDetail({ id }: { id: string }) {
       ))}
       <h3 class="section-title">Analysis</h3>
       <ApiPanel meal={meal} onChanged={load} />
+      {meal.not_counted && <NotCounted meal={meal} onChanged={load} />}
+      {meal.reanalyze_requested && <p class="muted">Waiting to be analyzed again.</p>}
       {meal.analyses?.length ? meal.analyses.map((a) => <AnalysisCard key={a.id} a={a} />) : <p class="muted">Not analyzed yet.</p>}
       <button class="button secondary danger" onClick={remove}>
         Delete meal
       </button>
     </article>
+  );
+}
+
+// Skipped by the model, so it adds nothing to the day (D51): a duplicate of another meal, or
+// a photo it couldn't use. Delete it, or have it analyzed again if the model was wrong.
+function NotCounted({ meal, onChanged }: { meal: Meal; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const again = async () => {
+    setBusy(true);
+    const r = await fetch(`/api/meals/${meal.id}/reanalyze`, { method: "POST" }).catch(() => null);
+    setBusy(false);
+    if (!r?.ok) return showToast({ text: "Couldn't ask for that. Are you online?" });
+    const { queued } = (await r.json()) as { queued: boolean };
+    showToast({ text: queued ? "Analyzing it again." : "It's back with the meals waiting for analysis." });
+    onChanged();
+    mealsChanged();
+  };
+  return (
+    <div class="card not-counted">
+      <p>
+        <strong>Not counted.</strong> {meal.not_counted}
+      </p>
+      <p class="muted small">It adds nothing to the day. If it's a duplicate, delete it; if the model got it wrong, analyze it again.</p>
+      <button class="button secondary" onClick={again} disabled={busy}>
+        Analyze again
+      </button>
+    </div>
   );
 }
 

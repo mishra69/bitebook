@@ -742,3 +742,21 @@ The hour stays (D42). Talked through what it guards, the user's own case being c
 with every question answered: an unsaved draft is never on the server, an open question or
 a queued re-estimate already holds a meal back, so the hour covers only second thoughts:
 "Correct this" (API mode) and deleting the meal, which Health would otherwise keep.
+
+## D51 · 2026-11-21 · A skipped meal is handled, not waiting
+
+Supersedes "a skipped meal stays ready to analyze" (SPEC §6). On Nov 20 a Say it meal
+describing a lunch already photographed ("For lunch I forgot to give a description…") was
+skipped by the model as a duplicate, rightly, since the lunch's estimate already used its
+words. But a skip didn't count as analysis, so the meal stayed in the waiting list, went
+into every new batch, was skipped again each time, and kept its day "partial".
+
+A skip is now the model's answer, not a failure: the meal counts as handled (`HANDLED` in
+`src/worker/handled.ts`, used wherever "waiting" is decided), adds nothing to the day's
+totals, and is never sent to Apple Health. Its card says "Not counted:" with the reason;
+its page offers "Analyze again" (`POST /api/meals/:id/reanalyze`, which sets
+`meals.reanalyze_at`, migration 0019), which puts it back with the meals waiting, or
+queues it with automatic analysis on. Deleting it is the other way out.
+
+The root cause, a description that belonged on a saved meal, is left for later: adding a
+voice note to a saved meal (with a re-estimate) would avoid the duplicate.

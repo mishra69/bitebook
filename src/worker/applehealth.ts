@@ -1,3 +1,4 @@
+import { HANDLED } from "./handled";
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { ulid } from "../shared/ulid";
@@ -145,6 +146,7 @@ async function heldBack(db: D1Database, userId: string, now: number): Promise<He
     .prepare(
       `SELECT m.tz,
          (SELECT MAX(created_at) FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0) AS analyzed_at,
+         ${HANDLED()} AS handled,
          EXISTS (SELECT 1 FROM questions q WHERE q.user_id = ?1 AND q.meal_id = m.id AND q.answer IS NULL) AS asked,
          EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running')) AS busy
        FROM meals m
@@ -152,13 +154,14 @@ async function heldBack(db: D1Database, userId: string, now: number): Promise<He
          AND NOT EXISTS (SELECT 1 FROM health_exports e WHERE e.user_id = ?1 AND e.meal_id = m.id)`,
     )
     .bind(userId)
-    .all<{ tz: string; analyzed_at: string | null; asked: number; busy: number }>();
+    .all<{ tz: string; analyzed_at: string | null; handled: number; asked: number; busy: number }>();
   const held: Held = { settling: 0, next_ready: null, needs_answer: 0, analyzing: 0, not_analyzed: 0 };
   let soonest: { at: number; tz: string } | null = null;
   for (const r of results) {
     if (r.asked) held.needs_answer++;
     else if (r.busy) held.analyzing++;
-    else if (!r.analyzed_at) held.not_analyzed++;
+    else if (!r.handled) held.not_analyzed++;
+    else if (!r.analyzed_at) continue; // skipped by the model: counts for nothing, never sent (D51)
     else {
       const ready = Date.parse(r.analyzed_at) + SETTLED_MS;
       if (ready <= now) continue; // settled: being sent

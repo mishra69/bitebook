@@ -1,3 +1,4 @@
+import { HANDLED } from "./handled";
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 import { attachPhotos } from "./meals";
@@ -36,11 +37,11 @@ export type BatchView = {
 
 export const batches = new Hono<AppEnv>();
 
-// Meals not yet analyzed (a skipped analysis doesn't count) and not in an open batch.
+// Meals not yet analyzed (a skipped one is handled, D51) and not in an open batch.
 const PENDING_SQL = `
   SELECT m.id, m.taken_at, m.tz, m.meal_type, m.note FROM meals m
   WHERE m.user_id = ?1 AND m.deleted_at IS NULL
-    AND NOT EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0)
+    AND NOT ${HANDLED()}
     AND NOT EXISTS (SELECT 1 FROM batches b, json_each(b.key_map) k
                     WHERE b.user_id = ?1 AND b.status = 'open' AND k.value = m.id)
     AND NOT EXISTS (SELECT 1 FROM analysis_jobs j

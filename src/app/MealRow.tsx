@@ -77,6 +77,11 @@ export function MealRow({ row }: { row: Row }) {
           {row.meal.analysis.fiber_g !== null && ` · fiber ${Math.round(row.meal.analysis.fiber_g)}`}
         </p>
       )}
+      {row.kind === "server" && row.meal.not_counted && (
+        <p class="meal-analysis not-counted">
+          <strong>Not counted:</strong> {row.meal.not_counted}
+        </p>
+      )}
       {row.meal.note && <p class="meal-note">{row.meal.note}</p>}
     </>
   );

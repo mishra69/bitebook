@@ -13,6 +13,9 @@ const replyFor = (batchId: string, edit: (r: any) => void = () => {}) => {
   return r;
 };
 
+// A recent date, so meals land inside the prompt's 30-day digest whenever the tests run.
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+
 async function clearPending(request: APIRequestContext) {
   for (const b of (await (await request.get("/api/batches?status=open")).json()).batches) await request.post(`/api/batches/${b.id}/abandon`);
   for (const m of (await (await request.get("/api/batches/pending-meals")).json()).meals) await request.delete(`/api/meals/${m.id}`);
@@ -79,26 +82,41 @@ test("a bad reply is refused with reasons, and nothing is stored", async ({ page
   await request.post(`/api/batches/${batchId}/abandon`);
 });
 
-test("a skipped meal stays ready to analyze, and a batch can't be imported twice", async ({ request }) => {
+test("a skipped meal counts as handled, says why, and can be analyzed again; a batch can't be imported twice", async ({ page, request }) => {
   await clearPending(request);
   const a = await seedMeal(request, "2026-10-15T13:00:00-05:00", "skip A");
   const b = await seedMeal(request, "2026-10-15T19:00:00-05:00", "skip B");
   const batchId = (await (await request.post("/api/batches", { data: { meal_ids: [a, b] } })).json()).batch.id;
-  const reply = replyFor(batchId, (r) => Object.assign(r.meals[1], { skipped: true, skip_reason: "photo too dark", description: null }));
+  const reply = replyFor(batchId, (r) => Object.assign(r.meals[1], { skipped: true, skip_reason: "Same dinner as meal A, already counted.", description: null }));
   const res = await request.post(`/api/batches/${batchId}/import`, { data: { reply: JSON.stringify(reply), model: "test model" } });
   expect(res.status()).toBe(200);
-  expect((await res.json()).skipped).toEqual([{ key: "B", reason: "photo too dark" }]);
-
-  const pending = (await (await request.get("/api/batches/pending-meals")).json()).meals.map((m: { id: string }) => m.id);
-  expect(pending).toEqual([b]);
+  expect((await res.json()).skipped).toEqual([{ key: "B", reason: "Same dinner as meal A, already counted." }]);
   const again = await request.post(`/api/batches/${batchId}/import`, { data: { reply: JSON.stringify(reply), model: "test model" } });
   expect(again.status()).toBe(409);
+
+  // Handled (D51): no longer waiting, and its day counts as fully analyzed.
+  const pending = async () => (await (await request.get("/api/batches/pending-meals")).json()).meals.map((m: { id: string }) => m.id);
+  expect(await pending()).not.toContain(b);
+  const { days } = await (await request.get("/api/days?before=2026-10-16&limit=1")).json();
+  expect(days[0]).toMatchObject({ date: "2026-10-15" });
+  expect(days[0].analyzed).toBe(days[0].meals);
+
+  // Its card and page say why it adds nothing; "Analyze again" puts it back.
+  await openApp(page, `#/meal/${b}`);
+  await expect(page.locator(".card.not-counted")).toContainText("Not counted. Same dinner as meal A, already counted.");
+  await page.getByRole("button", { name: "Analyze again" }).click();
+  await expect(page.locator(".toast")).toContainText("back with the meals waiting for analysis");
+  await expect(page.getByText("Waiting to be analyzed again.")).toBeVisible();
+  expect(await pending()).toContain(b);
+  expect((await request.post(`/api/meals/${a}/reanalyze`)).status()).toBe(409); // only for a skipped meal
+  await request.delete(`/api/meals/${a}`);
+  await request.delete(`/api/meals/${b}`);
 });
 
 test("remembered foods and notes carry into the next batch's prompt, and can be retired", async ({ page, request }) => {
   await clearPending(request);
-  const a = await seedMeal(request, "2026-10-14T13:00:00-05:00", "memory A");
-  const b = await seedMeal(request, "2026-10-14T19:00:00-05:00", "memory B");
+  const a = await seedMeal(request, `${daysAgo(4)}T13:00:00-06:00`, "memory A");
+  const b = await seedMeal(request, `${daysAgo(4)}T19:00:00-06:00`, "memory B");
   const first = (await (await request.post("/api/batches", { data: { meal_ids: [a, b] } })).json()).batch.id;
   const reply = replyFor(first, (r) =>
     r.remember.push({ action: "add", code: null, name: "usual lassi shake", serving: "16 oz", kcal: 460, protein_g: 32, carbs_g: 65, fat_g: 8, fiber_g: 6, reason: "recurring" }),
@@ -117,7 +135,7 @@ test("remembered foods and notes carry into the next batch's prompt, and can be 
     .poll(() => page.locator(".memory .card textarea").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value)))
     .toContain("My lassi shake: 1 cup 2% yogurt, 1 banana, 1 scoop whey.");
 
-  const c = await seedMeal(request, "2026-10-18T09:00:00-05:00", "memory C");
+  const c = await seedMeal(request, `${daysAgo(1)}T09:00:00-06:00`, "memory C");
   let prompt = (await (await request.post("/api/batches", { data: { meal_ids: [c] } })).json()).batch.prompt as string;
   expect(prompt).toMatch(/Notes: [^]*My lassi shake: 1 cup 2% yogurt, 1 banana, 1 scoop whey\./);
   expect(prompt).toContain(`[${code}] usual lassi shake · 16 oz · 460 kcal · P32 C65 F8 fiber 6`);
@@ -138,7 +156,7 @@ test("remembered foods and notes carry into the next batch's prompt, and can be 
   await expect(activeRow).toHaveCount(0);
   await expect(page.locator("details")).toContainText("Retired");
   for (const bt of (await (await request.get("/api/batches?status=open")).json()).batches) await request.post(`/api/batches/${bt.id}/abandon`);
-  const d = await seedMeal(request, "2026-10-18T13:00:00-05:00", "memory D");
+  const d = await seedMeal(request, `${daysAgo(1)}T13:00:00-06:00`, "memory D");
   prompt = (await (await request.post("/api/batches", { data: { meal_ids: [d] } })).json()).batch.prompt;
   expect(prompt).not.toContain("usual lassi shake ·");
 });

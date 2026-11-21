@@ -1,3 +1,4 @@
+import { HANDLED } from "./handled";
 import { replyText, type Completion } from "./openrouter";
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
@@ -202,7 +203,7 @@ async function runJob(env: ApiEnv, origin: string, job: Job): Promise<string | n
     .first<Omit<Meal, "photos">>();
   if (!row) return null; // deleted meanwhile: nothing to do
   if (job.kind === "analyze") {
-    const done = await env.DB.prepare("SELECT 1 FROM analyses WHERE user_id = ?1 AND meal_id = ?2 AND skipped = 0").bind(job.user_id, job.meal_id).first();
+    const done = await env.DB.prepare(`SELECT 1 FROM meals m WHERE m.user_id = ?1 AND m.id = ?2 AND ${HANDLED()}`).bind(job.user_id, job.meal_id).first();
     if (done) return null; // analyzed some other way since (e.g. through the chat)
   }
   const [meal] = await attachPhotos(env.DB, job.user_id, [row]);
@@ -264,7 +265,7 @@ export const analysis = new Hono<AppEnv>();
 // Meals with no analysis that nothing is working on: saved while automatic analysis was
 // off, or whose run failed for good.
 const WAITING_SQL = `SELECT m.id FROM meals m WHERE m.user_id = ?1 AND m.deleted_at IS NULL
-    AND NOT EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0)
+    AND NOT ${HANDLED()}
     AND NOT EXISTS (SELECT 1 FROM batches b, json_each(b.key_map) k WHERE b.user_id = ?1 AND b.status = 'open' AND k.value = m.id)
     AND NOT EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running'))`;
 

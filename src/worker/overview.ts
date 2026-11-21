@@ -1,3 +1,4 @@
+import { HANDLED } from "./handled";
 import { Hono } from "hono";
 import type { AppEnv } from "./index";
 
@@ -23,7 +24,7 @@ export type DayTotals = {
 async function dayTotals(db: D1Database, userId: string, where: string, ...args: (string | number)[]) {
   const { results: rows } = await db
     .prepare(
-      `SELECT substr(m.taken_at, 1, 10) AS date, a.payload,
+      `SELECT substr(m.taken_at, 1, 10) AS date, a.payload, ${HANDLED()} AS handled,
          EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running')) AS busy
        FROM meals m
        LEFT JOIN analyses a ON a.id = (SELECT id FROM analyses x WHERE x.user_id = ?1 AND x.meal_id = m.id AND x.skipped = 0
@@ -31,12 +32,14 @@ async function dayTotals(db: D1Database, userId: string, where: string, ...args:
        WHERE m.user_id = ?1 AND m.deleted_at IS NULL AND ${where}`,
     )
     .bind(userId, ...args)
-    .all<{ date: string; payload: string | null; busy: number }>();
+    .all<{ date: string; payload: string | null; handled: number; busy: number }>();
   const byDate = new Map<string, DayTotals>();
   for (const r of rows) {
     const d = byDate.get(r.date) ?? { date: r.date, meals: 0, analyzed: 0, analyzing: 0, kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, fiber_meals: 0 };
     d.meals++;
-    if (r.payload) {
+    // Handled but with no counted estimate: skipped by the model, so it adds nothing (D51).
+    if (r.handled && !r.payload) d.analyzed++;
+    else if (r.payload) {
       const p = JSON.parse(r.payload) as Record<string, unknown>;
       const n = (k: string) => (typeof p[k] === "number" ? (p[k] as number) : 0);
       d.analyzed++;
@@ -103,7 +106,7 @@ overview.get("/overview", async (c) => {
     // Same rule as the Analyze screen's list: not analyzed, not in an open batch, not queued.
     c.env.DB.prepare(
       `SELECT COUNT(*) AS n FROM meals m WHERE m.user_id = ?1 AND m.deleted_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM analyses a WHERE a.user_id = ?1 AND a.meal_id = m.id AND a.skipped = 0)
+         AND NOT ${HANDLED()}
          AND NOT EXISTS (SELECT 1 FROM batches b, json_each(b.key_map) k WHERE b.user_id = ?1 AND b.status = 'open' AND k.value = m.id)
          AND NOT EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.user_id = ?1 AND j.meal_id = m.id AND j.status IN ('queued','running'))`,
     )

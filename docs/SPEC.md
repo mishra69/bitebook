@@ -138,7 +138,7 @@ rows and files for good.
 
 ## 4. Data model (D1)
 
-> **Tier:** Contract · **Verified:** 2026-11-01 · **Expires:** 2027-05-01
+> **Tier:** Contract · **Verified:** 2026-11-21 · **Expires:** 2027-05-21
 >
 > Once a table exists in `migrations/`, the migration is authoritative. Reduce its part
 > of this section to the reasoning behind it. Implemented so far: `users` (0001, rebuilt in 0002), `meals` and `photos` (0003),
@@ -148,7 +148,8 @@ rows and files for good.
 > `reminders_sent` (0013, D25), the API path's `users.api_model`, batch cost columns,
 > open questions and `analysis_jobs` (0014, D28), `batches.request_params` (0015, D33),
 > `health_keys`, `health_runs` and `health_exports` (0016, D34); `users.picture_url` (0017, D41);
-> `voice_notes` rebuilt with its own id and a position, up to five per meal (0018, D46).
+> `voice_notes` rebuilt with its own id and a position, up to five per meal (0018, D46);
+> `meals.reanalyze_at`, "Analyze again" after a skip (0019, D51).
 > (`meals.kind` came in 0004 and went in 0005, D15.)
 
 **Ownership rule:** every table except `users` has `user_id TEXT NOT NULL REFERENCES
@@ -178,7 +179,9 @@ All IDs are ULIDs (sortable by time). All timestamps are ISO 8601 with a UTC off
 
 -- batches, analyses, foods, notes: see migrations/0006_batches_analyses_memory.sql.
 --  * analyses.skipped is a column, not just a payload field, so "pending" is a plain
---    query: no non-skipped analysis, and not in an open batch's key_map.
+--    query: no analysis at all (a skipped one counts as handled, D51, unless
+--    meals.reanalyze_at is newer), and not in an open batch's key_map. See HANDLED in
+--    src/worker/handled.ts.
 --  * batches.active_codes records which remembered-food codes the prompt listed, so
 --    import can reject a reply that cites a code the model was never shown.
 --  * foods are updated in place (they're memory, not history); the reply that changed
@@ -200,7 +203,7 @@ is derived, not stored.
 
 ## 5. Storage layout (R2)
 
-> **Tier:** Contract · **Verified:** 2026-11-01 · **Expires:** 2027-05-01
+> **Tier:** Contract · **Verified:** 2026-11-21 · **Expires:** 2027-05-21
 >
 > Implemented in `photoKey()` in `src/shared/meals.ts`, which is authoritative.
 
@@ -221,7 +224,7 @@ downscale to about this size anyway, and the smaller files keep uploads cheap.
 
 ## 6. Prompt and reply contract
 
-> **Tier:** Contract · **Verified:** 2026-11-01 · **Expires:** 2027-05-01
+> **Tier:** Contract · **Verified:** 2026-11-21 · **Expires:** 2027-05-21
 >
 > Once implemented, the prompt template file and reply validator are authoritative. Any
 > change bumps `prompt/N` or `bitebook.reply/N`. Old versions stay readable.
@@ -285,7 +288,9 @@ against the first real reply (`tests/fixtures/replies/`). What the code can't sa
   confirmed name on every analysis (`batches.reply_model`, `analyses.model`), and the raw
   self-report in `batches.reply_model_reported`. Models misname themselves often enough
   that the self-report is never the record on its own (D17).
-- A skipped meal gets an analysis row with `skipped = 1` and stays ready to analyze.
+- A skipped meal gets an analysis row with `skipped = 1`. It counts as handled and adds
+  nothing to the day; it shows "Not counted" with the model's reason, and "Analyze again"
+  puts it back with the meals waiting (D51).
 - `questions` (API path only): up to two questions for the user, stored unanswered on the
   meal. The JSON Schema in `reply.ts` is sent as `response_format` where a model supports
   it; the validator doesn't depend on that (D27).

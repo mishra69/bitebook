@@ -292,3 +292,5 @@ ul { margin: 0; padding-left: 1.2rem; }
 .signin-icon { border-radius: 22%; box-shadow: 0 6px 24px rgb(0 0 0 / 0.12); }
 .signin-button { min-height: 44px; margin-top: 1rem; }
 .voices { display: grid; gap: 0.5rem; }
+.card.not-counted { display: grid; gap: 0.5rem; justify-items: start; margin: 0.75rem 0; }
+.card.not-counted p { margin: 0; }
